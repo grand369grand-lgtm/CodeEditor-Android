@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CodeEditor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        #container {
+            width: 100%;
+            height: 100%;
+        }
+        /* Loading indicator */
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #8E8E93;
+            font-size: 14px;
+        }
+        #loading .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #C7C7CC;
+            border-top-color: #007AFF;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>Loading Editor...</div>
+    </div>
+    <div id="container"></div>
+
+    <!-- Monaco Editor from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script>
+        // Global editor reference
+        var editor = null;
+
+        // Configure Monaco loader
+        require.config({
+            paths: {
+                'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs'
+            }
+        });
+
+        // Load Monaco Editor
+        require(['vs/editor/editor.main'], function() {
+            // Hide loading indicator
+            document.getElementById('loading').style.display = 'none';
+
+            // Create the editor
+            editor = monaco.editor.create(document.getElementById('container'), {
+                value: '',
+                language: 'plaintext',
+                theme: 'vs-dark',
+                fontSize: 14,
+                fontFamily: "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', monospace",
+                fontLigatures: true,
+                minimap: { enabled: false },
+                lineNumbers: 'on',
+                wordWrap: 'on',
+                tabSize: 4,
+                insertSpaces: true,
+                scrollBeyondLastLine: false,
+                renderWhitespace: 'none',
+                cursorBlinking: 'smooth',
+                cursorSmoothCaretAnimation: 'on',
+                smoothScrolling: true,
+                automaticLayout: true,
+                padding: { top: 8, bottom: 8 },
+                suggest: {
+                    showKeywords: true,
+                    showSnippets: true
+                },
+                scrollbar: {
+                    verticalScrollbarSize: 8,
+                    horizontalScrollbarSize: 8
+                },
+                overviewRulerBorder: false,
+                hideCursorInOverviewRuler: true,
+                renderLineHighlight: 'all',
+                bracketPairColorization: { enabled: true }
+            });
+
+            // Notify Android that editor is ready
+            if (typeof AndroidEditor !== 'undefined') {
+                AndroidEditor.onEditorReady();
+            }
+
+            // Listen for content changes
+            editor.onDidChangeModelContent(function() {
+                if (typeof AndroidEditor !== 'undefined') {
+                    AndroidEditor.onContentChanged();
+                }
+            });
+
+            // Keyboard shortcut: Ctrl+S to save
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {
+                if (typeof AndroidEditor !== 'undefined') {
+                    AndroidEditor.onSaveRequested();
+                }
+            });
+
+            // Keyboard shortcut: Ctrl+Shift+F5 to run
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.F5, function() {
+                if (typeof AndroidEditor !== 'undefined') {
+                    AndroidEditor.onRunRequested();
+                }
+            });
+
+            // Register completions for Python, C++, Java
+            registerCompletions();
+        });
+
+        /**
+         * Set editor content, language, and theme.
+         * Called from Java via evaluateJavascript.
+         */
+        function setEditorContent(code, language, theme, fontSize, wordWrap, lineNumbers, minimap, tabSize) {
+            if (!editor) return;
+
+            // Set language
+            var langId = language;
+            if (language === 'py') langId = 'python';
+            if (language === 'cpp' || language === 'c' || language === 'h') langId = 'cpp';
+
+            var model = editor.getModel();
+            if (model) {
+                monaco.editor.setModelLanguage(model, langId);
+                model.setValue(unescapeCode(code));
+            }
+
+            // Set theme
+            if (theme === 'vs-dark') {
+                monaco.editor.setTheme('vs-dark');
+            } else {
+                monaco.editor.setTheme('vs');
+            }
+
+            // Apply settings
+            editor.updateOptions({
+                fontSize: fontSize || 14,
+                wordWrap: wordWrap ? 'on' : 'off',
+                lineNumbers: lineNumbers ? 'on' : 'off',
+                minimap: { enabled: minimap || false },
+                tabSize: tabSize || 4
+            });
+        }
+
+        /**
+         * Get the current editor content.
+         * Called from Java via evaluateJavascript.
+         */
+        function getEditorContent() {
+            if (!editor) return '';
+            return editor.getValue();
+        }
+
+        /**
+         * Change the editor language.
+         */
+        function setEditorLanguage(language) {
+            if (!editor) return;
+            var model = editor.getModel();
+            if (model) {
+                monaco.editor.setModelLanguage(model, language);
+            }
+        }
+
+        /**
+         * Unescape code string that was escaped for JavaScript injection.
+         */
+        function unescapeCode(code) {
+            if (!code) return '';
+            return code
+                .replace(/\\n/g, '\n')
+                .replace(/\\r/g, '\r')
+                .replace(/\\t/g, '\t')
+                .replace(/\\"/g, '"')
+                .replace(/\\'/g, "'")
+                .replace(/\\\\/g, '\\');
+        }
+
+        /**
+         * Register custom autocomplete completions for supported languages.
+         */
+        function registerCompletions() {
+            // Python completions
+            monaco.languages.registerCompletionItemProvider('python', {
+                provideCompletionItems: function(model, position) {
+                    var suggestions = [
+                        { label: 'print', kind: monaco.languages.CompletionItemKind.Function, insertText: 'print(${1})', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Print to stdout' },
+                        { label: 'def', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'def ${1:function_name}(${2:params}):\n\t${3:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Define a function' },
+                        { label: 'class', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'class ${1:ClassName}:\n\tdef __init__(self${2:, params}):\n\t\t${3:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Define a class' },
+                        { label: 'if', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'if ${1:condition}:\n\t${2:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'for', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'for ${1:item} in ${2:iterable}:\n\t${3:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'while', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'while ${1:condition}:\n\t${2:pass}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'import', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'import ${1:module}' },
+                        { label: 'from', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'from ${1:module} import ${2:name}' },
+                        { label: 'try', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'try:\n\t${1:pass}\nexcept ${2:Exception} as e:\n\t${3:print(e)}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'with', kind: monaco.languages.CompletionItemKind.Keyword, insertText: "with ${1:expression} as ${2:var}:\n\t${3:pass}", insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                    ];
+                    return { suggestions: suggestions };
+                }
+            });
+
+            // C++ completions
+            monaco.languages.registerCompletionItemProvider('cpp', {
+                provideCompletionItems: function(model, position) {
+                    var suggestions = [
+                        { label: '#include', kind: monaco.languages.CompletionItemKind.Keyword, insertText: '#include <${1:header}>', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Include header file' },
+                        { label: 'int main', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'int main(int argc, char* argv[]) {\n\t${1:// code}\n\treturn 0;\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Main function' },
+                        { label: 'cout', kind: monaco.languages.CompletionItemKind.Function, insertText: 'std::cout << ${1} << std::endl;', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'cin', kind: monaco.languages.CompletionItemKind.Function, insertText: 'std::cin >> ${1:variable};', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'vector', kind: monaco.languages.CompletionItemKind.Class, insertText: 'std::vector<${1:int}> ${2:name};', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'string', kind: monaco.languages.CompletionItemKind.Class, insertText: 'std::string ${1:name} = "${2}";', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'for', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'for (int ${1:i} = 0; ${1:i} < ${2:n}; ${1:i}++) {\n\t${3:// body}\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'class', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'class ${1:ClassName} {\npublic:\n\t${1:ClassName}();\n\t~${1:ClassName}();\nprivate:\n\t${2:// members}\n};', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                    ];
+                    return { suggestions: suggestions };
+                }
+            });
+
+            // Java completions
+            monaco.languages.registerCompletionItemProvider('java', {
+                provideCompletionItems: function(model, position) {
+                    var suggestions = [
+                        { label: 'public class', kind: monaco.languages.CompletionItemKind.Snippet, insertText: 'public class ${1:ClassName} {\n\tpublic static void main(String[] args) {\n\t\t${2:// code}\n\t}\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet, documentation: 'Main class with main method' },
+                        { label: 'System.out.println', kind: monaco.languages.CompletionItemKind.Function, insertText: 'System.out.println(${1});', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'Scanner', kind: monaco.languages.CompletionItemKind.Class, insertText: 'Scanner ${1:scanner} = new Scanner(System.in);', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'ArrayList', kind: monaco.languages.CompletionItemKind.Class, insertText: 'ArrayList<${1:String}> ${2:list} = new ArrayList<>();', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'HashMap', kind: monaco.languages.CompletionItemKind.Class, insertText: 'HashMap<${1:String}, ${2:Integer}> ${3:map} = new HashMap<>();', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'for', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'for (int ${1:i} = 0; ${1:i} < ${2:n}; ${1:i}++) {\n\t${3:// body}\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'foreach', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'for (${1:String} ${2:item} : ${3:collection}) {\n\t${4:// body}\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                        { label: 'try', kind: monaco.languages.CompletionItemKind.Keyword, insertText: 'try {\n\t${1:// code}\n} catch (${2:Exception} e) {\n\t${3:e.printStackTrace();}\n}', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                    ];
+                    return { suggestions: suggestions };
+                }
+            });
+        }
+    </script>
+</body>
+</html>

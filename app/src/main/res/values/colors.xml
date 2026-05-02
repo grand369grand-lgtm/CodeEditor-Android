@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- iOS-style Color Palette -->
+    <!-- Primary -->
+    <color name="ios_blue">#007AFF</color>
+    <color name="ios_blue_light">#4DA3FF</color>
+    <color name="ios_blue_dark">#0056CC</color>
+
+    <!-- Secondary -->
+    <color name="ios_gray">#8E8E93</color>
+    <color name="ios_gray_light">#C7C7CC</color>
+    <color name="ios_gray_ultra_light">#F2F2F7</color>
+    <color name="ios_gray_dark">#636366</color>
+
+    <!-- Semantic Colors -->
+    <color name="ios_green">#34C759</color>
+    <color name="ios_red">#FF3B30</color>
+    <color name="ios_orange">#FF9500</color>
+    <color name="ios_yellow">#FFCC00</color>
+    <color name="ios_purple">#AF52DE</color>
+    <color name="ios_pink">#FF2D55</color>
+    <color name="ios_teal">#5AC8FA</color>
+    <color name="ios_indigo">#5856D6</color>
+
+    <!-- Language Colors -->
+    <color name="lang_python">#3572A5</color>
+    <color name="lang_cpp">#F34B7D</color>
+    <color name="lang_java">#B07219</color>
+    <color name="lang_js">#F7DF1E</color>
+    <color name="lang_html">#E34C26</color>
+    <color name="lang_css">#563D7C</color>
+
+    <!-- Backgrounds -->
+    <color name="background_primary">#FFFFFF</color>
+    <color name="background_secondary">#F2F2F7</color>
+    <color name="background_card">#FFFFFF</color>
+    <color name="background_dark">#1C1C1E</color>
+    <color name="background_dark_secondary">#2C2C2E</color>
+    <color name="background_dark_card">#1C1C1E</color>
+
+    <!-- Text -->
+    <color name="text_primary">#000000</color>
+    <color name="text_secondary">#3C3C43</color>
+    <color name="text_tertiary">#8E8E93</color>
+    <color name="text_dark_primary">#FFFFFF</color>
+    <color name="text_dark_secondary">#EBEBF5</color>
+    <color name="text_dark_tertiary">#8E8E93</color>
+
+    <!-- Separator -->
+    <color name="separator">#C6C6C8</color>
+    <color name="separator_dark">#38383A</color>
+
+    <!-- Terminal -->
+    <color name="terminal_bg">#1E1E1E</color>
+    <color name="terminal_text">#00FF00</color>
+    <color name="terminal_text_secondary">#A0A0A0</color>
+
+    <!-- Editor Status Bar -->
+    <color name="status_bar_bg">#E5E5EA</color>
+    <color name="status_bar_bg_dark">#2C2C2E</color>
+</resources>

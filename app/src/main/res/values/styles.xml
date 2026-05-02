@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- iOS-style Theme for CodeEditor -->
+    <style name="Theme.CodeEditor" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/ios_blue</item>
+        <item name="colorPrimaryDark">@color/ios_blue_dark</item>
+        <item name="colorPrimaryVariant">@color/ios_blue_light</item>
+        <item name="colorAccent">@color/ios_blue</item>
+        <item name="colorOnPrimary">@color/background_primary</item>
+        <item name="colorSurface">@color/background_primary</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="android:colorBackground">@color/background_secondary</item>
+        <item name="android:statusBarColor">@color/background_primary</item>
+        <item name="android:navigationBarColor">@color/background_primary</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+
+    <!-- iOS-style Card -->
+    <style name="iOSCardView" parent="Widget.MaterialComponents.CardView">
+        <item name="cardCornerRadius">12dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="cardBackgroundColor">@color/background_card</item>
+        <item name="strokeColor">@color/separator</item>
+        <item name="strokeWidth">0.5dp</item>
+    </style>
+
+    <!-- iOS-style Action Card (home screen) -->
+    <style name="iOSActionCard" parent="Widget.MaterialComponents.CardView">
+        <item name="cardCornerRadius">16dp</item>
+        <item name="cardElevation">2dp</item>
+        <item name="cardBackgroundColor">@color/background_card</item>
+        <item name="cardMaxElevation">4dp</item>
+    </style>
+
+    <!-- iOS-style Section Header -->
+    <style name="iOSSectionHeader">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/ios_gray</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">0.05</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">4dp</item>
+    </style>
+
+    <!-- iOS-style Title -->
+    <style name="iOSTitle">
+        <item name="android:textSize">34sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">sans-serif-bold</item>
+    </style>
+
+    <!-- iOS-style Subtitle -->
+    <style name="iOSSubtitle">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- iOS-style Body Text -->
+    <style name="iOSBody">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- iOS-style Caption -->
+    <style name="iOSCaption">
+        <item name="android:textSize">12sp</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <!-- iOS-style Button -->
+    <style name="iOSButton" parent="Widget.MaterialComponents.Button">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="cornerRadius">10dp</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+
+    <!-- iOS-style Switch -->
+    <style name="iOSSwitch" parent="Widget.MaterialComponents.CompoundButton.Switch">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:minHeight">44dp</item>
+    </style>
+
+    <!-- iOS-style Toolbar -->
+    <style name="iOSToolbar" parent="Widget.MaterialComponents.Toolbar">
+        <item name="android:textSize">17sp</item>
+        <item name="titleTextColor">@color/text_primary</item>
+        <item name="subtitleTextColor">@color/text_secondary</item>
+        <item name="android:background">@color/background_primary</item>
+        <item name="android:elevation">0dp</item>
+    </style>
+
+    <!-- Terminal text style -->
+    <style name="TerminalText">
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">@color/terminal_text</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+    </style>
+
+    <!-- File extension badge -->
+    <style name="ExtensionBadge">
+        <item name="android:textSize">9sp</item>
+        <item name="android:textColor">@color/background_primary</item>
+        <item name="android:fontFamily">sans-serif-bold</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <item name="android:paddingTop">1dp</item>
+        <item name="android:paddingBottom">1dp</item>
+    </style>
+</resources>

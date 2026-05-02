@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background_dark">
+
+    <!-- Editor Toolbar - iOS-style top bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/background_dark_secondary"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <!-- File name -->
+        <TextView
+            android:id="@+id/tv_file_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/untitled"
+            android:textColor="@color/text_dark_primary"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="middle"
+            android:paddingStart="8dp" />
+
+        <!-- Language badge -->
+        <TextView
+            android:id="@+id/tv_language"
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:gravity="center"
+            android:text="TEXT"
+            android:textSize="11sp"
+            android:textColor="@color/background_primary"
+            android:fontFamily="sans-serif-bold"
+            android:background="@drawable/bg_language_badge"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:layout_marginEnd="8dp" />
+    </LinearLayout>
+
+    <!-- Editor Toolbar Extension (extra tools) -->
+    <HorizontalScrollView
+        android:id="@+id/toolbar_extension"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="@color/background_dark_secondary"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp">
+
+            <!-- Undo -->
+            <ImageView
+                android:id="@+id/btn_undo"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_undo"
+                android:contentDescription="Undo"
+                app:tint="@color/ios_gray_light"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <!-- Redo -->
+            <ImageView
+                android:id="@+id/btn_redo"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_redo"
+                android:contentDescription="Redo"
+                app:tint="@color/ios_gray_light"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="20dp"
+                android:background="@color/separator_dark"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp" />
+
+            <!-- Find -->
+            <ImageView
+                android:id="@+id/btn_find"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_search"
+                android:contentDescription="Find"
+                app:tint="@color/ios_gray_light"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <!-- Replace -->
+            <ImageView
+                android:id="@+id/btn_replace"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_replace"
+                android:contentDescription="Replace"
+                app:tint="@color/ios_gray_light"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="20dp"
+                android:background="@color/separator_dark"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp" />
+
+            <!-- Go to line -->
+            <ImageView
+                android:id="@+id/btn_goto_line"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_goto_line"
+                android:contentDescription="Go to Line"
+                app:tint="@color/ios_gray_light"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <!-- Format -->
+            <ImageView
+                android:id="@+id/btn_format"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_format"
+                android:contentDescription="Format"
+                app:tint="@color/ios_gray_light"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="20dp"
+                android:background="@color/separator_dark"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp" />
+
+            <!-- Run -->
+            <ImageView
+                android:id="@+id/btn_run"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:padding="6dp"
+                android:src="@drawable/ic_play"
+                android:contentDescription="Run"
+                app:tint="@color/ios_green"
+                android:background="?attr/selectableItemBackgroundBorderless" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- Progress Bar -->
+    <ProgressBar
+        android:id="@+id/progress_bar"
+        style="@android:style/Widget.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:max="100"
+        android:progressDrawable="@drawable/bg_progress_bar"
+        android:visibility="gone" />
+
+    <!-- Monaco Editor WebView -->
+    <WebView
+        android:id="@+id/webview_editor"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+</LinearLayout>

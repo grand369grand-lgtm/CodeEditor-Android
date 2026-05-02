@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background_secondary"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header Section - iOS-style large title -->
+        <TextView
+            android:id="@+id/tv_app_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="4dp"
+            android:text="CodeEditor"
+            android:textSize="34sp"
+            android:textColor="@color/text_primary"
+            android:fontFamily="sans-serif-bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp"
+            android:text="Code anywhere, anytime"
+            android:textSize="17sp"
+            android:textColor="@color/text_tertiary"
+            android:fontFamily="sans-serif" />
+
+        <!-- Quick Actions - iOS-style card grid -->
+        <TextView
+            style="@style/iOSSectionHeader"
+            android:text="Quick Actions" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="16dp">
+
+            <!-- New File Card -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/card_new_file"
+                style="@style/iOSActionCard"
+                android:layout_width="0dp"
+                android:layout_height="100dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                app:cardBackgroundColor="@color/ios_blue">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <ImageView
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_new_file"
+                        android:contentDescription="New File"
+                        app:tint="@color/background_primary" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/new_file"
+                        android:textColor="@color/background_primary"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Open File Card -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/card_open_file"
+                style="@style/iOSActionCard"
+                android:layout_width="0dp"
+                android:layout_height="100dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                app:cardBackgroundColor="@color/ios_green">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <ImageView
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_open_file"
+                        android:contentDescription="Open File"
+                        app:tint="@color/background_primary" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/open_file"
+                        android:textColor="@color/background_primary"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="24dp">
+
+            <!-- File Manager Card -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/card_file_manager"
+                style="@style/iOSActionCard"
+                android:layout_width="0dp"
+                android:layout_height="100dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                app:cardBackgroundColor="@color/ios_purple">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <ImageView
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_folder"
+                        android:contentDescription="File Manager"
+                        app:tint="@color/background_primary" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/file_manager"
+                        android:textColor="@color/background_primary"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Settings Card -->
+            <androidx.cardview.widget.CardView
+                android:id="@+id/card_settings"
+                style="@style/iOSActionCard"
+                android:layout_width="0dp"
+                android:layout_height="100dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                app:cardBackgroundColor="@color/ios_gray_dark">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <ImageView
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:src="@drawable/ic_settings"
+                        android:contentDescription="Settings"
+                        app:tint="@color/background_primary" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/settings"
+                        android:textColor="@color/background_primary"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif-medium" />
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+        </LinearLayout>
+
+        <!-- Recent Files Section -->
+        <TextView
+            style="@style/iOSSectionHeader"
+            android:text="Recent Files" />
+
+        <TextView
+            android:id="@+id/tv_welcome"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:gravity="center"
+            android:text="@string/welcome_message"
+            android:textColor="@color/text_tertiary"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_recent_files"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:nestedScrollingEnabled="false"
+            android:clipToPadding="false"
+            android:paddingBottom="16dp" />
+
+    </LinearLayout>
+</ScrollView>

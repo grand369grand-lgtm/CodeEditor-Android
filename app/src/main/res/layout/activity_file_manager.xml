@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/background_secondary">
+
+    <!-- iOS-style path bar -->
+    <LinearLayout
+        android:id="@+id/breadcrumb_bar"
+        android:layout_width="match_parent"
+        android:layout_height="36dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/background_primary"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:src="@drawable/ic_folder"
+            android:contentDescription="Folder"
+            app:tint="@color/ios_blue"
+            android:layout_marginEnd="6dp" />
+
+        <TextView
+            android:id="@+id/tv_current_path"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="/storage/emulated/0/CodeEditor"
+            android:textSize="13sp"
+            android:textColor="@color/ios_blue"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="start" />
+    </LinearLayout>
+
+    <!-- Separator -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="@color/separator" />
+
+    <!-- File list -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_files"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
+
+        <!-- Empty state -->
+        <TextView
+            android:id="@+id/tv_empty_state"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/empty_folder"
+            android:textSize="15sp"
+            android:textColor="@color/text_tertiary"
+            android:fontFamily="sans-serif"
+            android:visibility="gone" />
+    </FrameLayout>
+
+</LinearLayout>

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- iOS-style file item with rounded corners -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/item_container"
+    android:layout_width="match_parent"
+    android:layout_height="60dp"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@color/background_primary"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground">
+
+    <!-- File icon -->
+    <ImageView
+        android:id="@+id/iv_file_icon"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:src="@drawable/ic_file"
+        android:contentDescription="File"
+        app:tint="@color/ios_blue" />
+
+    <!-- File info -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="12dp">
+
+        <TextView
+            android:id="@+id/tv_file_name"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="filename.py"
+            android:textSize="16sp"
+            android:textColor="@color/text_primary"
+            android:fontFamily="sans-serif"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/tv_file_details"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1.2 KB · Jan 01, 2024"
+            android:textSize="12sp"
+            android:textColor="@color/text_tertiary"
+            android:fontFamily="sans-serif"
+            android:maxLines="1" />
+    </LinearLayout>
+
+    <!-- Extension badge -->
+    <TextView
+        android:id="@+id/tv_extension"
+        style="@style/ExtensionBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_extension_badge"
+        android:text="PY" />
+
+    <!-- Chevron (iOS-style) -->
+    <ImageView
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:src="@drawable/ic_chevron_right"
+        android:contentDescription="Open"
+        app:tint="@color/ios_gray_light"
+        android:layout_marginStart="8dp" />
+
+</LinearLayout>
