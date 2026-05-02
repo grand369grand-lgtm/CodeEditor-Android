@@ -23,13 +23,28 @@ android {
     buildTypes {
         release {
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Signing config - create keystore with: keytool -genkey -v -keystore release.keystore -alias codeeditor -keyalg RSA -keysize 2048 -validity 10000
+            // Then uncomment and fill in:
+            // signingConfig signingConfigs.release
         }
         debug {
             minifyEnabled false
             debuggable true
+            versionNameSuffix "-debug"
         }
     }
+
+    // Uncomment and configure for signed release APK
+    // signingConfigs {
+    //     release {
+    //         storeFile file('release.keystore')
+    //         storePassword 'your_store_password'
+    //         keyAlias 'codeeditor'
+    //         keyPassword 'your_key_password'
+    //     }
+    // }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
