@@ -24,7 +24,7 @@ APP_NAME="Gradle"
 APP_BASE_NAME=`basename "$0"`
 
 # Add default JVM options here.
-DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
+DEFAULT_JVM_OPTS="-Xmx64m -Xms64m"
 
 # Use the maximum available, or set MAX_FD != -1 to use that value.
 MAX_FD="maximum"
@@ -100,5 +100,6 @@ set -- \
         org.gradle.wrapper.GradleWrapperMain \
         "$@"
 
-# Use "xargs" to parse quoted args.
-exec "$JAVACMD" "$DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS" "$@"
+# Collect all arguments for the java command;
+# using $DEFAULT_JVM_OPTS, $JAVA_OPTS, and $GRADLE_OPTS
+exec "$JAVACMD" $DEFAULT_JVM_OPTS $JAVA_OPTS $GRADLE_OPTS "$@"
