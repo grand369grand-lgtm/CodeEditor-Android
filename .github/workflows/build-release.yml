@@ -25,16 +25,16 @@ jobs:
 
       - name: Install SDK packages
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" "cmake;3.22.1"
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "ndk;25.2.9519653" "cmake;3.22.1"
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon
+      - name: Build Release APK (unsigned)
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
         continue-on-error: true
 
       - name: Find APK files
@@ -44,21 +44,42 @@ jobs:
           RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
 
           if [ -n "$DEBUG_APK" ]; then
-            echo "debug_apk=$DEBUG_APK" >> $GITHUB_OUTPUT
+            echo "Found debug APK: $DEBUG_APK"
             cp "$DEBUG_APK" CodeEditor-debug.apk
           fi
 
           if [ -n "$RELEASE_APK" ]; then
-            echo "release_apk=$RELEASE_APK" >> $GITHUB_OUTPUT
+            echo "Found release APK: $RELEASE_APK"
             cp "$RELEASE_APK" CodeEditor-release.apk
           fi
 
-          echo "Tag: ${{ github.ref_name }}"
+          ls -la *.apk 2>/dev/null || echo "No APK files found yet"
 
-      - name: Upload Debug APK to Release
+      - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
+          name: "CodeEditor ${{ github.ref_name }}"
+          body: |
+            ## CodeEditor - Native Android Code Editor ${{ github.ref_name }}
+
+            ### Features
+            - Java + C++ NDK/JNI native Android development
+            - Monaco Editor in WebView for code editing
+            - iOS-style UI design
+            - Custom file manager with real filesystem access
+            - Python, C++, Java syntax highlighting and execution
+            - Local code execution - no server required
+
+            ### How to Install
+            1. Download `CodeEditor-debug.apk` below
+            2. Enable "Install from unknown sources" on your Android device
+            3. Open the APK file to install
+
+            ### Build Info
+            - Min Android: 7.0 (API 24)
+            - Target: Android 14 (API 34)
+            - Architecture: armeabi-v7a, arm64-v8a, x86, x86_64
           files: |
             CodeEditor-debug.apk
             CodeEditor-release.apk
