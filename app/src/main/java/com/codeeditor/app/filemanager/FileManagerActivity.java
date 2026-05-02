@@ -165,7 +165,7 @@ public class FileManagerActivity extends AppCompatActivity {
             // Open file in editor
             if (MODE_OPEN.equals(mode)) {
                 Intent resultIntent = new Intent();
-                result.putExtra(EXTRA_PATH, item.getPath());
+                resultIntent.putExtra(EXTRA_PATH, item.getPath());
                 setResult(RESULT_OK, resultIntent);
                 finish();
             } else {
