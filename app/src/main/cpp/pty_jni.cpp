@@ -1,13 +1,12 @@
 /*
  * pty_jni.cpp - PTY (Pseudo-Terminal) JNI Bridge for CodeEditor
  *
- * This implements the same PTY creation approach that Termux uses internally:
- * forkpty() creates a proper pseudo-terminal pair, giving the child process
- * a real TTY (fixing "can't find tty fd" errors) while the parent reads/writes
- * through the master fd.
+ * This implements PTY creation using /dev/ptmx (the same approach Termux uses).
+ * On Android NDK, forkpty() is not available, so we implement it manually
+ * using open(/dev/ptmx) + grantpt + unlockpt + ptsname + fork.
  *
- * This is the core of what makes Termux's terminal work - proper PTY handling
- * instead of ProcessBuilder's pipe-based I/O.
+ * This gives the child process a real TTY (fixing "can't find tty fd" errors)
+ * while the parent reads/writes through the master fd.
  */
 
 #include <jni.h>
@@ -26,17 +25,20 @@
 
 #ifdef __ANDROID__
 #include <linux/ptmx.h>
-#include <pty.h>
-#else
-#include <pty.h>
-#include <utmp.h>
 #endif
 
 #define TAG "PTY-JNI"
 
 /**
- * Create a PTY subprocess - the core function that makes the terminal work
- * like Termux. Uses forkpty() to create a proper pseudo-terminal.
+ * Create a PTY subprocess using /dev/ptmx.
+ *
+ * This is the same approach Termux uses on Android:
+ * 1. Open /dev/ptmx to get a master PTY fd
+ * 2. grantpt/unlockpt to set up the slave
+ * 3. ptsname to get the slave device path
+ * 4. fork() a child process
+ * 5. In child: open slave, set as controlling terminal, dup2 to stdin/stdout/stderr
+ * 6. In child: exec the command
  *
  * @param cmd      The command to execute (e.g., "/system/bin/sh")
  * @param cwd      Working directory (can be null)
@@ -101,20 +103,64 @@ Java_com_codeeditor_app_runner_TerminalSession_nativeCreateSubprocess(
     }
     envp[envLen] = nullptr;
 
-    // Create the PTY and fork
-    int masterFd;
-    pid_t pid;
+    // =====================================================================
+    // Create PTY using /dev/ptmx (Termux approach for Android)
+    // =====================================================================
 
-    // Try forkpty first (most reliable, like Termux)
-    pid = forkpty(&masterFd, nullptr, nullptr, nullptr);
-
-    if (pid < 0) {
-        // forkpty failed - try manual PTY creation as fallback
-        pid = createPtyManual(&masterFd);
+    // Step 1: Open /dev/ptmx to create a master PTY
+    int masterFd = open("/dev/ptmx", O_RDWR | O_NOCTTY);
+    if (masterFd < 0) {
+        // /dev/ptmx not available - this shouldn't happen on Android
+        for (int i = 0; i <= argsLen; i++) free(argv[i]);
+        free(argv);
+        for (int i = 0; i < envLen; i++) free(envp[i]);
+        free(envp);
+        env->ReleaseStringUTFChars(cmd, cmdStr);
+        if (cwdStr) env->ReleaseStringUTFChars(cwd, cwdStr);
+        return -1;
     }
 
+    // Step 2: Grant access to the slave PTY
+    if (grantpt(masterFd) < 0) {
+        close(masterFd);
+        for (int i = 0; i <= argsLen; i++) free(argv[i]);
+        free(argv);
+        for (int i = 0; i < envLen; i++) free(envp[i]);
+        free(envp);
+        env->ReleaseStringUTFChars(cmd, cmdStr);
+        if (cwdStr) env->ReleaseStringUTFChars(cwd, cwdStr);
+        return -1;
+    }
+
+    // Step 3: Unlock the slave PTY
+    if (unlockpt(masterFd) < 0) {
+        close(masterFd);
+        for (int i = 0; i <= argsLen; i++) free(argv[i]);
+        free(argv);
+        for (int i = 0; i < envLen; i++) free(envp[i]);
+        free(envp);
+        env->ReleaseStringUTFChars(cmd, cmdStr);
+        if (cwdStr) env->ReleaseStringUTFChars(cwd, cwdStr);
+        return -1;
+    }
+
+    // Step 4: Get the slave PTY device path
+    char *slaveName = ptsname(masterFd);
+    if (!slaveName) {
+        close(masterFd);
+        for (int i = 0; i <= argsLen; i++) free(argv[i]);
+        free(argv);
+        for (int i = 0; i < envLen; i++) free(envp[i]);
+        free(envp);
+        env->ReleaseStringUTFChars(cmd, cmdStr);
+        if (cwdStr) env->ReleaseStringUTFChars(cwd, cwdStr);
+        return -1;
+    }
+
+    // Step 5: Fork a child process
+    pid_t pid = fork();
     if (pid < 0) {
-        // Both methods failed
+        close(masterFd);
         for (int i = 0; i <= argsLen; i++) free(argv[i]);
         free(argv);
         for (int i = 0; i < envLen; i++) free(envp[i]);
@@ -127,6 +173,32 @@ Java_com_codeeditor_app_runner_TerminalSession_nativeCreateSubprocess(
     if (pid == 0) {
         // === CHILD PROCESS ===
 
+        // Close master fd in child
+        close(masterFd);
+
+        // Create a new session
+        setsid();
+
+        // Open the slave PTY device
+        int slaveFd = open(slaveName, O_RDWR);
+        if (slaveFd < 0) {
+            _exit(127);
+        }
+
+        // Set the slave as the controlling terminal
+        // TIOCSCTTY is the ioctl to set controlling terminal on Linux/Android
+        ioctl(slaveFd, TIOCSCTTY, 0);
+
+        // Redirect stdin, stdout, stderr to the slave PTY
+        dup2(slaveFd, 0);  // stdin
+        dup2(slaveFd, 1);  // stdout
+        dup2(slaveFd, 2);  // stderr
+
+        // Close the slave fd if it's not one of the standard fds
+        if (slaveFd > 2) {
+            close(slaveFd);
+        }
+
         // Change working directory
         if (cwdStr) {
             chdir(cwdStr);
@@ -137,14 +209,10 @@ Java_com_codeeditor_app_runner_TerminalSession_nativeCreateSubprocess(
             putenv(envp[i]);
         }
 
-        // Close non-standard file descriptors
+        // Close any remaining open file descriptors
         for (int fd = 3; fd < 256; fd++) {
-            // Keep stdin(0), stdout(1), stderr(2) open
-            // The slave PTY is already set up as stdin/stdout/stderr by forkpty
+            close(fd);
         }
-
-        // Set session ID for proper terminal control
-        setsid();
 
         // Execute the command
         execv(cmdStr, argv);
@@ -176,75 +244,6 @@ Java_com_codeeditor_app_runner_TerminalSession_nativeCreateSubprocess(
     if (cwdStr) env->ReleaseStringUTFChars(cwd, cwdStr);
 
     return masterFd;
-}
-
-/**
- * Manual PTY creation fallback when forkpty() is not available.
- * Uses /dev/ptmx to create a PTY pair.
- */
-static pid_t createPtyManual(int *masterFd) {
-    // Open the PTY master
-    int mfd = open("/dev/ptmx", O_RDWR | O_NOCTTY);
-    if (mfd < 0) {
-        return -1;
-    }
-
-    // Grant access to the slave
-    if (grantpt(mfd) < 0) {
-        close(mfd);
-        return -1;
-    }
-
-    // Unlock the slave
-    if (unlockpt(mfd) < 0) {
-        close(mfd);
-        return -1;
-    }
-
-    // Get the slave device path
-    char *slaveName = ptsname(mfd);
-    if (!slaveName) {
-        close(mfd);
-        return -1;
-    }
-
-    // Fork
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(mfd);
-        return -1;
-    }
-
-    if (pid == 0) {
-        // Child process
-        close(mfd);
-
-        // Create a new session
-        setsid();
-
-        // Open the slave device
-        int sfd = open(slaveName, O_RDWR);
-        if (sfd < 0) {
-            _exit(127);
-        }
-
-        // Set slave as controlling terminal
-        ioctl(sfd, TIOCSCTTY, 0);
-
-        // Redirect stdin/stdout/stderr to slave
-        dup2(sfd, 0);
-        dup2(sfd, 1);
-        dup2(sfd, 2);
-
-        if (sfd > 2) close(sfd);
-
-        // Child continues in the caller
-        return 0;
-    }
-
-    // Parent
-    *masterFd = mfd;
-    return pid;
 }
 
 /**
@@ -313,7 +312,7 @@ Java_com_codeeditor_app_runner_TerminalSession_nativeSendSignal(
 
 /**
  * Read bytes from the PTY master fd into a byte array.
- * Returns the number of bytes read, or -1 on error/EOF.
+ * Returns the number of bytes read, 0 if no data, -1 on error/EOF.
  */
 extern "C" JNIEXPORT jint JNICALL
 Java_com_codeeditor_app_runner_TerminalSession_nativeReadFd(
@@ -332,7 +331,7 @@ Java_com_codeeditor_app_runner_TerminalSession_nativeReadFd(
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return 0; // No data available (non-blocking)
         }
-        return -1; // Error
+        return -1; // Error or EOF
     }
 
     return (jint) bytesRead;

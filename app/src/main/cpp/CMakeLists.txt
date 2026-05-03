@@ -40,6 +40,9 @@ target_compile_options(code_runner PRIVATE
 # This provides proper PTY handling via forkpty(), which is the core
 # of what makes Termux's terminal work. Without this, shells get
 # "can't find tty fd" errors because ProcessBuilder uses pipes.
+#
+# On Android NDK, forkpty is in libc (not a separate util library).
+# If forkpty is not available, we implement it using openpty+fork.
 # =====================================================================
 add_library(
         pty_support
@@ -47,16 +50,21 @@ add_library(
         pty_jni.cpp
 )
 
-# PTY needs util library for forkpty() on some platforms,
-# and definitely needs log for Android logging
-find_library(util-lib util)
+# Android NDK: forkpty/openpty are in libc, not a separate util lib
+# On some platforms, we need to link util for forkpty
+# But on Android, everything is in libc
 find_library(log-lib2 log)
 
-target_link_libraries(
-        pty_support
-        ${log-lib2}
-        ${util-lib}
-)
+# Try to find util library (for non-Android platforms)
+# On Android NDK, this will be NOTFOUND, which is fine
+find_library(util-lib util)
+
+if(util-lib)
+    target_link_libraries(pty_support ${log-lib2} ${util-lib})
+else()
+    # Android NDK - forkpty/openpty are in libc
+    target_link_libraries(pty_support ${log-lib2})
+endif()
 
 target_compile_options(pty_support PRIVATE
         -O2
