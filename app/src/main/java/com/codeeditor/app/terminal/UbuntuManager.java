@@ -79,15 +79,36 @@ public class UbuntuManager {
     private static final String ALPINE_ROOTFS_URL_X86 =
             "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.0-x86_64.tar.gz";
 
-    // Proot binary from Termux packages (.deb format) - MOST RELIABLE
-    private static final String PROOT_DEB_URL_ARM64 =
-            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-1_arm64.deb";
-    private static final String PROOT_DEB_URL_ARM =
-            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-1_arm.deb";
-    private static final String PROOT_DEB_URL_X86 =
-            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-1_x86_64.deb";
+    // =====================================================================
+    // Proot download URLs - Multiple fallback sources for reliability
+    // =====================================================================
 
-    // Alternative proot sources (static binaries)
+    // Strategy 1: Termux packages (.deb format) - Updated URLs
+    // Termux reorganized their package repository structure
+    private static final String PROOT_DEB_URL_ARM64 =
+            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0_arm64.deb";
+    private static final String PROOT_DEB_URL_ARM =
+            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0_arm.deb";
+    private static final String PROOT_DEB_URL_X86 =
+            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0_x86_64.deb";
+
+    // Strategy 1b: Termux packages - alternate URL format (new repo structure)
+    private static final String PROOT_DEB_ALT_URL_ARM64 =
+            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-2_arm64.deb";
+    private static final String PROOT_DEB_ALT_URL_ARM =
+            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-2_arm.deb";
+    private static final String PROOT_DEB_ALT_URL_X86 =
+            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-2_x86_64.deb";
+
+    // Strategy 2: Static proot builds from fdroid/termux mirrors
+    private static final String PROOT_STATIC_MIRROR_ARM64 =
+            "https://mirrors.fridu.dev/files/proot/proot-arm64";
+    private static final String PROOT_STATIC_MIRROR_ARM =
+            "https://mirrors.fridu.dev/files/proot/proot-arm";
+    private static final String PROOT_STATIC_MIRROR_X86 =
+            "https://mirrors.fridu.dev/files/proot/proot-amd64";
+
+    // Strategy 3: Alternative static builds from GitHub
     private static final String PROOT_STATIC_ALT_ARM64 =
             "https://github.com/nicm/proot-static-builds/releases/download/v5.4.0/proot-v5.4.0-static-arm64";
     private static final String PROOT_STATIC_ALT_ARM =
@@ -95,13 +116,13 @@ public class UbuntuManager {
     private static final String PROOT_STATIC_ALT_X86 =
             "https://github.com/nicm/proot-static-builds/releases/download/v5.4.0/proot-v5.4.0-static-amd64";
 
-    // Original static URLs (may be broken - kept as last fallback)
-    private static final String PROOT_STATIC_URL =
-            "https://github.com/greentreeboy/proot-static-builds/releases/download/v5.4.0/proot-static-arm64";
-    private static final String PROOT_STATIC_URL_ARM =
-            "https://github.com/greentreeboy/proot-static-builds/releases/download/v5.4.0/proot-static-arm";
-    private static final String PROOT_STATIC_URL_X86 =
-            "https://github.com/greentreeboy/proot-static-builds/releases/download/v5.4.0/proot-static-amd64";
+    // Strategy 4: proot-me/proot GitHub releases
+    private static final String PROOT_GITHUB_RELEASE_ARM64 =
+            "https://github.com/proot-me/proot/releases/download/v5.4.0/proot-v5.4.0-linux-arm64-static";
+    private static final String PROOT_GITHUB_RELEASE_ARM =
+            "https://github.com/proot-me/proot/releases/download/v5.4.0/proot-v5.4.0-linux-arm-static";
+    private static final String PROOT_GITHUB_RELEASE_X86 =
+            "https://github.com/proot-me/proot/releases/download/v5.4.0/proot-v5.4.0-linux-x86_64-static";
 
     private final Context context;
     private final File linuxDir;
@@ -456,7 +477,14 @@ public class UbuntuManager {
 
     /**
      * Download proot binary with multiple fallback sources.
-     * Priority: Termux .deb (extract binary) > Alternative static builds > Original static > System paths
+     * Tries each source in order until one succeeds.
+     *
+     * Priority:
+     * 1. Termux .deb packages (primary + alternate version)
+     * 2. Static mirror builds
+     * 3. GitHub static builds (nicm, proot-me)
+     * 4. Bundled assets
+     * 5. System/Termux paths
      */
     private void downloadProot() throws IOException {
         String abi = getDeviceAbi();
@@ -465,59 +493,27 @@ public class UbuntuManager {
 
         Log.d(TAG, "Downloading proot for ABI: " + abi);
 
-        // Strategy 1: Extract proot from Termux .deb package (MOST RELIABLE)
+        // Strategy 1: Extract proot from Termux .deb package (primary URL)
         String debUrl = isArm64 ? PROOT_DEB_URL_ARM64 : (isArm ? PROOT_DEB_URL_ARM : PROOT_DEB_URL_X86);
-        try {
-            Log.d(TAG, "Trying Termux .deb: " + debUrl);
-            File debFile = new File(linuxDir, "cache/proot.deb");
-            downloadFile(debUrl, debFile);
-            if (debFile.exists() && debFile.length() > 1000) {
-                Log.d(TAG, "Downloaded .deb: " + debFile.length() + " bytes, extracting...");
-                if (extractProotFromDeb(debFile, prootBin)) {
-                    prootBin.setExecutable(true, false);
-                    prootBin.setReadable(true, false);
-                    Log.d(TAG, "Proot extracted from .deb: " + prootBin.length() + " bytes");
-                    debFile.delete();
-                    return;
-                }
-                Log.w(TAG, "Failed to extract proot from .deb, trying alternatives");
-            }
-            debFile.delete();
-        } catch (IOException e) {
-            Log.w(TAG, "Termux .deb download failed: " + e.getMessage());
-        }
+        if (tryDownloadProotFromDeb(debUrl, "Termux .deb (primary)")) return;
 
-        // Strategy 2: Alternative static proot builds (nicm)
+        // Strategy 1b: Try alternate Termux .deb URL format
+        String debAltUrl = isArm64 ? PROOT_DEB_ALT_URL_ARM64 : (isArm ? PROOT_DEB_ALT_URL_ARM : PROOT_DEB_ALT_URL_X86);
+        if (tryDownloadProotFromDeb(debAltUrl, "Termux .deb (alternate)")) return;
+
+        // Strategy 2: Static mirror builds
+        String mirrorUrl = isArm64 ? PROOT_STATIC_MIRROR_ARM64 : (isArm ? PROOT_STATIC_MIRROR_ARM : PROOT_STATIC_MIRROR_X86);
+        if (tryDownloadProotDirect(mirrorUrl, "Static mirror")) return;
+
+        // Strategy 3: GitHub static builds (nicm)
         String altUrl = isArm64 ? PROOT_STATIC_ALT_ARM64 : (isArm ? PROOT_STATIC_ALT_ARM : PROOT_STATIC_ALT_X86);
-        try {
-            Log.d(TAG, "Trying alternative static: " + altUrl);
-            downloadFile(altUrl, prootBin);
-            if (prootBin.exists() && prootBin.length() > 1000) {
-                prootBin.setExecutable(true, false);
-                prootBin.setReadable(true, false);
-                Log.d(TAG, "Proot from alt static: " + prootBin.length() + " bytes");
-                return;
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Alt static download failed: " + e.getMessage());
-        }
+        if (tryDownloadProotDirect(altUrl, "GitHub nicm static")) return;
 
-        // Strategy 3: Original static builds (may be broken)
-        String staticUrl = isArm64 ? PROOT_STATIC_URL : (isArm ? PROOT_STATIC_URL_ARM : PROOT_STATIC_URL_X86);
-        try {
-            Log.d(TAG, "Trying original static: " + staticUrl);
-            downloadFile(staticUrl, prootBin);
-            if (prootBin.exists() && prootBin.length() > 1000) {
-                prootBin.setExecutable(true, false);
-                prootBin.setReadable(true, false);
-                Log.d(TAG, "Proot from original static: " + prootBin.length() + " bytes");
-                return;
-            }
-        } catch (IOException e) {
-            Log.w(TAG, "Original static download failed: " + e.getMessage());
-        }
+        // Strategy 4: proot-me GitHub releases
+        String githubUrl = isArm64 ? PROOT_GITHUB_RELEASE_ARM64 : (isArm ? PROOT_GITHUB_RELEASE_ARM : PROOT_GITHUB_RELEASE_X86);
+        if (tryDownloadProotDirect(githubUrl, "GitHub proot-me")) return;
 
-        // Strategy 4: Try extracting from bundled assets
+        // Strategy 5: Try extracting from bundled assets
         try {
             Log.d(TAG, "Trying bundled assets");
             String assetName = "proot-" + abi;
@@ -531,25 +527,75 @@ public class UbuntuManager {
             Log.w(TAG, "Bundled asset extraction failed: " + e.getMessage());
         }
 
-        // Strategy 5: Copy from system/Termux paths
+        // Strategy 6: Copy from system/Termux paths
         String[] systemProotPaths = {
                 "/data/data/com.termux/files/usr/bin/proot",
                 "/usr/bin/proot",
                 "/system/bin/proot"
         };
         for (String path : systemProotPaths) {
-            File f = new File(path);
-            if (f.exists() && f.canExecute()) {
-                copyFile(f, prootBin);
-                prootBin.setExecutable(true, false);
-                Log.d(TAG, "Using system proot from: " + path);
-                return;
+            try {
+                File f = new File(path);
+                if (f.exists() && f.canExecute()) {
+                    copyFile(f, prootBin);
+                    prootBin.setExecutable(true, false);
+                    Log.d(TAG, "Using system proot from: " + path);
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to copy from " + path + ": " + e.getMessage());
             }
         }
 
         throw new IOException("Failed to download proot from all sources.\n" +
-                "Please ensure you have internet connection.\n" +
-                "Tip: Install Termux from F-Droid, then try again.");
+                "Please ensure you have a stable internet connection.\n" +
+                "You can also manually place a proot binary at: " + prootBin.getAbsolutePath());
+    }
+
+    /**
+     * Try downloading proot from a .deb package URL.
+     */
+    private boolean tryDownloadProotFromDeb(String url, String sourceName) {
+        try {
+            Log.d(TAG, "Trying " + sourceName + ": " + url);
+            File debFile = new File(linuxDir, "cache/proot.deb");
+            downloadFile(url, debFile);
+            if (debFile.exists() && debFile.length() > 1000) {
+                Log.d(TAG, "Downloaded .deb: " + debFile.length() + " bytes, extracting...");
+                if (extractProotFromDeb(debFile, prootBin)) {
+                    prootBin.setExecutable(true, false);
+                    prootBin.setReadable(true, false);
+                    Log.d(TAG, "Proot extracted from " + sourceName + ": " + prootBin.length() + " bytes");
+                    debFile.delete();
+                    return true;
+                }
+                Log.w(TAG, "Failed to extract proot from " + sourceName);
+            }
+            debFile.delete();
+        } catch (IOException e) {
+            Log.w(TAG, sourceName + " failed: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Try downloading proot as a direct static binary.
+     */
+    private boolean tryDownloadProotDirect(String url, String sourceName) {
+        try {
+            Log.d(TAG, "Trying " + sourceName + ": " + url);
+            downloadFile(url, prootBin);
+            if (prootBin.exists() && prootBin.length() > 1000) {
+                prootBin.setExecutable(true, false);
+                prootBin.setReadable(true, false);
+                Log.d(TAG, "Proot from " + sourceName + ": " + prootBin.length() + " bytes");
+                return true;
+            }
+            prootBin.delete();
+        } catch (IOException e) {
+            Log.w(TAG, sourceName + " failed: " + e.getMessage());
+        }
+        return false;
     }
 
     /**

@@ -294,6 +294,26 @@
     scrollToBottom();
   }
 
+  // ===== Base64 Output (from PTY JNI) =====
+  // With proper PTY support (like Termux), the shell sends full ANSI
+  // escape sequences. The Java side Base64-encodes the output to safely
+  // pass through the JavaScript bridge.
+  function appendBase64Output(base64Str) {
+    try {
+      var decoded = atob(base64Str);
+      // Convert to UTF-8 string
+      var bytes = new Uint8Array(decoded.length);
+      for (var i = 0; i < decoded.length; i++) {
+        bytes[i] = decoded.charCodeAt(i);
+      }
+      var text = new TextDecoder('utf-8').decode(bytes);
+      appendOutput(text);
+    } catch(e) {
+      // Fallback: treat as plain text
+      appendOutput(base64Str);
+    }
+  }
+
   function clearScreen() {
     outputEl.innerHTML = '';
   }
@@ -517,13 +537,15 @@
 
   // ===== Public API (called from Java) =====
 
-  // Append output text to the terminal
-  window.appendTerminalOutput = function(text) {
-    appendOutput(text);
+  // Append output text to the terminal (Base64-encoded from PTY)
+  // This is called by TerminalActivity.appendOutput() which Base64-encodes
+  // the PTY output to safely pass through the JavaScript bridge.
+  window.appendTerminalOutput = function(base64Text) {
+    appendBase64Output(base64Text);
   };
 
   // Set the prompt text
-  window.setPrompt = function(text) {
+  window.setTerminalPrompt = function(text) {
     promptEl.textContent = text;
   };
 
@@ -585,16 +607,17 @@
   };
 
   // ===== Initialization =====
-  appendOutput('\x1b[32m╔══════════════════════════════════════════════════╗\x1b[0m\n');
-  appendOutput('\x1b[32m║     CodeEditor Terminal v1.3.1                   ║\x1b[0m\n');
-  appendOutput('\x1b[32m║     Android Shell + Linux (proot) Support        ║\x1b[0m\n');
-  appendOutput('\x1b[32m╚══════════════════════════════════════════════════╝\x1b[0m\n');
+  appendOutput('\x1b[32m╔══════════════════════════════════════════════════════╗\x1b[0m\n');
+  appendOutput('\x1b[32m║     CodeEditor Terminal v1.4.0                       ║\x1b[0m\n');
+  appendOutput('\x1b[32m║     PTY Support + Linux (proot/udroid)               ║\x1b[0m\n');
+  appendOutput('\x1b[32m╚══════════════════════════════════════════════════════╝\x1b[0m\n');
   appendOutput('\n');
+  appendOutput('  \x1b[33mPTY Terminal (Termux-style)\x1b[0m\n');
   appendOutput('  Shell: /system/bin/sh (Android)\n');
   appendOutput('  Linux: Ubuntu/Debian/Alpine/udroid via proot\n');
   appendOutput('\n');
   appendOutput('  \x1b[33mQuick Start:\x1b[0m\n');
-  appendOutput('  1. Tap \x1b[36mudroid\x1b[0m button for Ubuntu Jammy + XFCE4\n');
+  appendOutput('  1. Tap \x1b[32mudroid\x1b[0m for Ubuntu Jammy + XFCE4 (auto-login)\n');
   appendOutput('  2. Or tap \x1b[36mUbuntu/Debian/Alpine\x1b[0m for other distros\n');
   appendOutput('  3. Use special keys bar for Tab, Ctrl, arrows\n');
   appendOutput('  4. Type \x1b[33mhelp\x1b[0m for available commands\n');

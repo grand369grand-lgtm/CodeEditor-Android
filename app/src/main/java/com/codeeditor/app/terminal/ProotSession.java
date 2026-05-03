@@ -4,56 +4,68 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * ProotSession - Manages an interactive Linux shell session using proot.
- * This provides a real Ubuntu/Debian/Alpine Linux environment on Android
- * without requiring root access, similar to Termux's proot-distro.
+ * ProotSession - Manages an interactive Linux shell session using proot
+ * with proper PTY support (like Termux).
  *
- * Features:
- * - Full Linux environment via proot (Ubuntu, Debian, Alpine)
- * - Interactive shell with bash/sh
- * - Package management (apt, apk, etc.)
- * - Real filesystem with /usr, /etc, /home, etc.
- * - Bidirectional I/O with the shell process
- * - Ctrl+C/D/Z signal support
- * - Working directory management
- * - Environment variable support
- * - ANSI color output streaming
+ * This version uses forkpty() via JNI to create a proper pseudo-terminal,
+ * which fixes the "can't find tty fd" error that occurred with the old
+ * ProcessBuilder approach.
+ *
+ * With proper PTY support:
+ * - proot gets a real TTY (no "can't find tty fd" errors)
+ * - Full ANSI color support from the Linux shell
+ * - Tab completion, arrow keys work properly
+ * - Ctrl+C/D/Z send real terminal signals
+ * - Interactive programs (vim, nano, htop) work correctly
  */
 public class ProotSession {
 
     private static final String TAG = "ProotSession";
 
-    private Process process;
-    private OutputStream processStdin;
-    private BufferedReader processStdout;
-    private BufferedReader processStderr;
+    // Load PTY support library (same as TerminalSession)
+    static {
+        System.loadLibrary("pty_support");
+    }
 
-    private final ExecutorService readExecutor;
-    private final Handler mainHandler;
+    // Native PTY methods (shared with TerminalSession)
+    private static native int nativeCreateSubprocess(
+            String cmd, String cwd, String[] args, String[] envVars, int[] processId);
+    private static native void nativeSetPtyWindowSize(int fd, int rows, int cols);
+    private static native int nativeWaitFor(int pid);
+    private static native void nativeCloseFd(int fd);
+    private static native void nativeSendSignal(int pid, int sig);
+    private static native int nativeReadFd(int fd, byte[] buffer, int offset, int length);
+    private static native int nativeWriteFd(int fd, byte[] buffer, int offset, int length);
+
+    // Session state
+    private int masterFd = -1;
+    private int processPid = -1;
+    private volatile boolean isRunning = false;
+    private volatile boolean isDestroyed = false;
+
     private final SessionCallback callback;
     private final UbuntuManager ubuntuManager;
     private final String distro;
+    private final ExecutorService ioExecutor;
+    private final Handler mainHandler;
 
-    private volatile boolean isRunning = false;
-    private volatile boolean isDestroyed = false;
+    private int terminalRows = 24;
+    private int terminalCols = 80;
 
     /**
      * Callback interface for session events.
      */
     public interface SessionCallback {
-        /** Called when new output is available from the shell */
-        void onOutput(String text);
+        /** Called when new output bytes are available from the proot shell */
+        void onOutput(byte[] data, int length);
 
         /** Called when the shell process exits */
         void onSessionExit(int exitCode);
@@ -63,22 +75,22 @@ public class ProotSession {
     }
 
     /**
-     * Create a new proot session.
+     * Create a new proot session with PTY support.
      *
      * @param ubuntuManager The UbuntuManager instance
-     * @param distro        The distribution to run (ubuntu, debian, alpine)
+     * @param distro        The distribution to run (ubuntu, debian, alpine, udroid)
      * @param callback      Callback for output and events
      */
     public ProotSession(UbuntuManager ubuntuManager, String distro, SessionCallback callback) {
         this.ubuntuManager = ubuntuManager;
         this.distro = distro;
         this.callback = callback;
-        this.readExecutor = Executors.newFixedThreadPool(3);
+        this.ioExecutor = Executors.newFixedThreadPool(2);
         this.mainHandler = new Handler(Looper.getMainLooper());
     }
 
     /**
-     * Start the proot session.
+     * Start the proot session with proper PTY support.
      */
     public void start() {
         if (isRunning || isDestroyed) return;
@@ -95,183 +107,166 @@ public class ProotSession {
 
         try {
             String[] command = ubuntuManager.buildProotCommand(null);
-            String[] environment = ubuntuManager.buildProotEnvironment();
+            String[] environment = buildProotEnvironment();
 
-            Log.d(TAG, "Starting proot session:");
+            Log.d(TAG, "Starting proot PTY session:");
             Log.d(TAG, "  Command: " + String.join(" ", command));
             Log.d(TAG, "  Rootfs: " + ubuntuManager.getRootfsDir().getAbsolutePath());
 
-            ProcessBuilder pb = new ProcessBuilder(command);
-            pb.environment().clear();
+            // Create PTY subprocess via JNI (like Termux)
+            int[] pidOut = new int[1];
+            String cmd = command[0];
 
-            // Set environment variables
-            for (String envVar : environment) {
-                int eq = envVar.indexOf('=');
-                if (eq > 0) {
-                    pb.environment().put(
-                            envVar.substring(0, eq),
-                            envVar.substring(eq + 1)
-                    );
-                }
+            // Build args array (everything after the command)
+            String[] args = new String[command.length - 1];
+            System.arraycopy(command, 1, args, 0, args.length);
+
+            masterFd = nativeCreateSubprocess(cmd, null, args, environment, pidOut);
+
+            if (masterFd < 0) {
+                // PTY creation failed - try fallback with simpler command
+                Log.w(TAG, "PTY creation failed, trying fallback proot command");
+                startFallbackSession();
+                return;
             }
 
-            // Inherit some essential system vars
-            String systemPath = System.getenv("PATH");
-            if (systemPath != null) {
-                pb.environment().put("SYSTEM_PATH", systemPath);
-            }
-            pb.environment().put("PROOT_NO_SECCOMP", "1");
-            pb.environment().put("HOME", "/root");
-            pb.environment().put("TERM", "xterm-256color");
-
-            pb.redirectErrorStream(false);
-
-            process = pb.start();
-            processStdin = process.getOutputStream();
-            processStdout = new BufferedReader(new InputStreamReader(
-                    process.getInputStream(), StandardCharsets.UTF_8));
-            processStderr = new BufferedReader(new InputStreamReader(
-                    process.getErrorStream(), StandardCharsets.UTF_8));
-
+            processPid = pidOut[0];
             isRunning = true;
 
-            // Start reading stdout in background
-            readExecutor.execute(this::readStdout);
+            Log.d(TAG, "Proot PTY session started: pid=" + processPid + ", masterFd=" + masterFd);
 
-            // Start reading stderr in background
-            readExecutor.execute(this::readStderr);
+            // Set initial window size
+            nativeSetPtyWindowSize(masterFd, terminalRows, terminalCols);
+
+            // Start reading from PTY
+            ioExecutor.execute(this::readPtyOutput);
 
             // Monitor process exit
-            readExecutor.execute(this::monitorProcess);
+            ioExecutor.execute(this::monitorProcess);
 
-            Log.d(TAG, "Proot session started successfully");
-
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to start proot session", e);
-
-            // Fallback: try with a simpler proot invocation
-            try {
-                startFallbackSession();
-            } catch (IOException e2) {
-                notifyError("Failed to start proot session: " + e.getMessage() +
-                        "\n\nFallback also failed: " + e2.getMessage() +
-                        "\n\nMake sure proot is properly installed.");
-            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start proot PTY session", e);
+            notifyError("Failed to start proot: " + e.getMessage());
         }
     }
 
     /**
-     * Fallback session: try a simpler proot invocation.
+     * Fallback session with simpler proot invocation.
      */
-    private void startFallbackSession() throws IOException {
-        String prootPath = ubuntuManager.getProotBin().getAbsolutePath();
-        String rootfsPath = ubuntuManager.getRootfsDir().getAbsolutePath();
+    private void startFallbackSession() {
+        try {
+            String prootPath = ubuntuManager.getProotBin().getAbsolutePath();
+            String rootfsPath = ubuntuManager.getRootfsDir().getAbsolutePath();
 
-        // Simple proot command: proot -r rootfs /bin/sh
-        String[] simpleCommand = {
-                prootPath,
-                "-r", rootfsPath,
-                "-b", "/dev",
-                "-b", "/proc",
-                "-b", "/sys",
-                "-b", "/sdcard",
-                "/bin/sh"
-        };
+            // Simple proot command
+            String cmd = prootPath;
+            String[] args = {
+                    "-r", rootfsPath,
+                    "-b", "/dev",
+                    "-b", "/proc",
+                    "-b", "/sys",
+                    "-b", "/sdcard",
+                    "/bin/sh"
+            };
 
-        Log.d(TAG, "Trying fallback proot command: " + String.join(" ", simpleCommand));
+            String[] env = {
+                    "HOME=/root",
+                    "USER=root",
+                    "TERM=xterm-256color",
+                    "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                    "PROOT_NO_SECCOMP=1",
+                    "LANG=en_US.UTF-8"
+            };
 
-        ProcessBuilder pb = new ProcessBuilder(simpleCommand);
-        pb.environment().put("HOME", "/root");
-        pb.environment().put("TERM", "xterm-256color");
-        pb.environment().put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
-        pb.environment().put("PROOT_NO_SECCOMP", "1");
-        pb.environment().put("USER", "root");
-        pb.redirectErrorStream(false);
+            int[] pidOut = new int[1];
+            masterFd = nativeCreateSubprocess(cmd, null, args, env, pidOut);
 
-        process = pb.start();
-        processStdin = process.getOutputStream();
-        processStdout = new BufferedReader(new InputStreamReader(
-                process.getInputStream(), StandardCharsets.UTF_8));
-        processStderr = new BufferedReader(new InputStreamReader(
-                process.getErrorStream(), StandardCharsets.UTF_8));
+            if (masterFd < 0) {
+                notifyError("Failed to create PTY for proot session. masterFd=" + masterFd);
+                return;
+            }
 
-        isRunning = true;
+            processPid = pidOut[0];
+            isRunning = true;
 
-        readExecutor.execute(this::readStdout);
-        readExecutor.execute(this::readStderr);
-        readExecutor.execute(this::monitorProcess);
+            Log.d(TAG, "Fallback proot PTY session started: pid=" + processPid);
 
-        Log.d(TAG, "Fallback proot session started");
+            nativeSetPtyWindowSize(masterFd, terminalRows, terminalCols);
+            ioExecutor.execute(this::readPtyOutput);
+            ioExecutor.execute(this::monitorProcess);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Fallback proot session also failed", e);
+            notifyError("Failed to start proot: " + e.getMessage());
+        }
     }
 
     /**
-     * Start a session running a specific command.
+     * Start a udroid session with proper PTY support.
      */
-    public void startWithCommand(String command) {
+    public void startUdroidSession() {
         if (isRunning || isDestroyed) return;
 
-        if (!ubuntuManager.isDistroInstalled()) {
-            notifyError("Linux distribution not installed");
+        if (!ubuntuManager.isUdroidInstalled()) {
+            notifyError("udroid not installed. Please install it first.");
             return;
         }
 
         if (!ubuntuManager.isProotAvailable()) {
-            notifyError("proot binary not available");
+            notifyError("proot binary not available.");
             return;
         }
 
         try {
-            String[] cmd = ubuntuManager.buildProotCommand(command);
-            String[] environment = ubuntuManager.buildProotEnvironment();
+            String[] command = ubuntuManager.buildUdroidLoginCommand();
+            String[] environment = buildProotEnvironment();
 
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.environment().clear();
+            // Add udroid-specific environment
+            List<String> envList = new ArrayList<>();
+            for (String e : environment) envList.add(e);
+            envList.add("DISPLAY=:0");
+            envList.add("PULSE_SERVER=tcp:127.0.0.1:4713");
+            envList.add("XDG_RUNTIME_DIR=/tmp/runtime-root");
 
-            for (String envVar : environment) {
-                int eq = envVar.indexOf('=');
-                if (eq > 0) {
-                    pb.environment().put(
-                            envVar.substring(0, eq),
-                            envVar.substring(eq + 1)
-                    );
-                }
+            String cmd = command[0];
+            String[] args = new String[command.length - 1];
+            System.arraycopy(command, 1, args, 0, args.length);
+
+            int[] pidOut = new int[1];
+            masterFd = nativeCreateSubprocess(cmd, null, args,
+                    envList.toArray(new String[0]), pidOut);
+
+            if (masterFd < 0) {
+                notifyError("Failed to create PTY for udroid session");
+                return;
             }
 
-            pb.environment().put("PROOT_NO_SECCOMP", "1");
-            pb.redirectErrorStream(false);
-
-            process = pb.start();
-            processStdin = process.getOutputStream();
-            processStdout = new BufferedReader(new InputStreamReader(
-                    process.getInputStream(), StandardCharsets.UTF_8));
-            processStderr = new BufferedReader(new InputStreamReader(
-                    process.getErrorStream(), StandardCharsets.UTF_8));
-
+            processPid = pidOut[0];
             isRunning = true;
 
-            readExecutor.execute(this::readStdout);
-            readExecutor.execute(this::readStderr);
-            readExecutor.execute(this::monitorProcess);
+            Log.d(TAG, "udroid PTY session started: pid=" + processPid);
 
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to start proot session with command", e);
-            notifyError("Failed to start: " + e.getMessage());
+            nativeSetPtyWindowSize(masterFd, terminalRows, terminalCols);
+            ioExecutor.execute(this::readPtyOutput);
+            ioExecutor.execute(this::monitorProcess);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start udroid session", e);
+            notifyError("Failed to start udroid: " + e.getMessage());
         }
     }
 
     /**
-     * Write a command to the shell's stdin.
+     * Write a string to the proot shell via PTY.
      */
     public void write(String command) {
-        if (!isRunning || processStdin == null) return;
+        if (!isRunning || masterFd < 0) return;
 
         try {
-            OutputStreamWriter writer = new OutputStreamWriter(processStdin, StandardCharsets.UTF_8);
-            writer.write(command);
-            writer.flush();
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to write to proot stdin", e);
-            notifyError("Write error: " + e.getMessage());
+            byte[] bytes = command.getBytes(StandardCharsets.UTF_8);
+            nativeWriteFd(masterFd, bytes, 0, bytes.length);
+        } catch (Exception e) {
+            Log.e(TAG, "Write error", e);
         }
     }
 
@@ -283,49 +278,48 @@ public class ProotSession {
     }
 
     /**
-     * Send Ctrl+C (SIGINT) to the shell process.
+     * Send Ctrl+C through the PTY.
      */
     public void sendCtrlC() {
-        if (!isRunning || processStdin == null) return;
-        try {
-            processStdin.write(3); // ETX = Ctrl+C
-            processStdin.flush();
-        } catch (IOException e) {
-            Log.w(TAG, "Failed to send Ctrl+C", e);
-        }
+        if (!isRunning || masterFd < 0) return;
+        byte[] ctrlC = {3};
+        nativeWriteFd(masterFd, ctrlC, 0, 1);
     }
 
     /**
-     * Send Ctrl+D (EOF) to the shell process.
+     * Send Ctrl+D through the PTY.
      */
     public void sendCtrlD() {
-        if (!isRunning || processStdin == null) return;
-        try {
-            processStdin.write(4); // EOT = Ctrl+D
-            processStdin.flush();
-        } catch (IOException e) {
-            Log.w(TAG, "Failed to send Ctrl+D", e);
-        }
+        if (!isRunning || masterFd < 0) return;
+        byte[] ctrlD = {4};
+        nativeWriteFd(masterFd, ctrlD, 0, 1);
     }
 
     /**
-     * Send Ctrl+Z (SIGTSTP) to the shell process.
+     * Send Ctrl+Z through the PTY.
      */
     public void sendCtrlZ() {
-        if (!isRunning || processStdin == null) return;
-        try {
-            processStdin.write(26); // SUB = Ctrl+Z
-            processStdin.flush();
-        } catch (IOException e) {
-            Log.w(TAG, "Failed to send Ctrl+Z", e);
-        }
+        if (!isRunning || masterFd < 0) return;
+        byte[] ctrlZ = {26};
+        nativeWriteFd(masterFd, ctrlZ, 0, 1);
     }
 
     /**
-     * Change the working directory.
+     * Send an escape sequence through the PTY.
      */
-    public void changeDirectory(String path) {
-        executeCommand("cd " + escapeShellArg(path));
+    public void sendEscapeSequence(String sequence) {
+        write("\033" + sequence);
+    }
+
+    /**
+     * Update terminal size.
+     */
+    public void setTerminalSize(int rows, int cols) {
+        this.terminalRows = rows;
+        this.terminalCols = cols;
+        if (masterFd >= 0) {
+            nativeSetPtyWindowSize(masterFd, rows, cols);
+        }
     }
 
     /**
@@ -339,77 +333,78 @@ public class ProotSession {
      * Destroy the session and clean up resources.
      */
     public void destroy() {
+        if (isDestroyed) return;
         isDestroyed = true;
         isRunning = false;
 
-        try {
-            if (processStdin != null) processStdin.close();
-        } catch (IOException ignored) {}
+        if (masterFd >= 0) {
+            nativeCloseFd(masterFd);
+            masterFd = -1;
+        }
 
-        try {
-            if (processStdout != null) processStdout.close();
-        } catch (IOException ignored) {}
+        if (processPid > 0) {
+            nativeSendSignal(processPid, 9);
+            processPid = -1;
+        }
 
-        try {
-            if (processStderr != null) processStderr.close();
-        } catch (IOException ignored) {}
+        ioExecutor.shutdownNow();
+        Log.d(TAG, "Proot PTY session destroyed");
+    }
 
-        if (process != null) {
-            process.destroy();
-            // Force kill if process doesn't exit
+    // =====================================================================
+    // Private: Background Threads
+    // =====================================================================
+
+    private void readPtyOutput() {
+        byte[] buffer = new byte[4096];
+
+        while (!isDestroyed && isRunning) {
             try {
-                Thread.sleep(100);
-                process.destroyForcibly();
-            } catch (InterruptedException ignored) {}
-        }
+                int bytesRead = nativeReadFd(masterFd, buffer, 0, buffer.length);
 
-        readExecutor.shutdownNow();
-    }
+                if (bytesRead < 0) {
+                    Log.d(TAG, "PTY read returned " + bytesRead + " - session ended");
+                    isRunning = false;
+                    break;
+                }
 
-    // =====================================================================
-    // Private: Background Reading Threads
-    // =====================================================================
+                if (bytesRead > 0) {
+                    byte[] data = new byte[bytesRead];
+                    System.arraycopy(buffer, 0, data, 0, bytesRead);
+                    notifyOutput(data, bytesRead);
+                } else {
+                    Thread.sleep(10);
+                }
 
-    private void readStdout() {
-        try {
-            char[] buffer = new char[4096];
-            int count;
-            while ((count = processStdout.read(buffer)) != -1) {
-                if (isDestroyed) break;
-                String text = new String(buffer, 0, count);
-                notifyOutput(text);
-            }
-        } catch (IOException e) {
-            if (!isDestroyed) {
-                Log.d(TAG, "proot stdout read ended: " + e.getMessage());
-            }
-        }
-    }
-
-    private void readStderr() {
-        try {
-            char[] buffer = new char[4096];
-            int count;
-            while ((count = processStderr.read(buffer)) != -1) {
-                if (isDestroyed) break;
-                String text = new String(buffer, 0, count);
-                notifyOutput(text);  // Mix stderr into output
-            }
-        } catch (IOException e) {
-            if (!isDestroyed) {
-                Log.d(TAG, "proot stderr read ended: " + e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                if (!isDestroyed) {
+                    Log.e(TAG, "PTY read error", e);
+                }
+                break;
             }
         }
     }
 
     private void monitorProcess() {
         try {
-            int exitCode = process.waitFor();
-            isRunning = false;
-            notifyExit(exitCode);
+            Thread.sleep(500);
+            while (!isDestroyed && isRunning) {
+                if (processPid > 0) {
+                    int exitCode = nativeWaitFor(processPid);
+                    if (exitCode >= 0 || exitCode == -9) {
+                        isRunning = false;
+                        Log.d(TAG, "Process exited with code: " + exitCode);
+                        notifyExit(exitCode);
+                        break;
+                    }
+                }
+                Thread.sleep(500);
+            }
         } catch (InterruptedException e) {
-            Log.w(TAG, "Process monitor interrupted", e);
-            isRunning = false;
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -417,9 +412,35 @@ public class ProotSession {
     // Private: Helpers
     // =====================================================================
 
-    private void notifyOutput(String text) {
+    private String[] buildProotEnvironment() {
+        List<String> envList = new ArrayList<>();
+
+        envList.add("HOME=/root");
+        envList.add("USER=root");
+        envList.add("LOGNAME=root");
+        envList.add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+        envList.add("TERM=xterm-256color");
+        envList.add("COLORTERM=truecolor");
+        envList.add("LANG=en_US.UTF-8");
+        envList.add("LC_ALL=en_US.UTF-8");
+        envList.add("SHELL=/bin/bash");
+        envList.add("PROOT_NO_SECCOMP=1");
+        envList.add("HOSTNAME=codeeditor");
+        envList.add("TMPDIR=/tmp");
+        envList.add("DISPLAY=:0");
+        envList.add("LINUX_ROOTFS=" + ubuntuManager.getRootfsDir().getAbsolutePath());
+
+        String systemPath = System.getenv("PATH");
+        if (systemPath != null) {
+            envList.add("SYSTEM_PATH=" + systemPath);
+        }
+
+        return envList.toArray(new String[0]);
+    }
+
+    private void notifyOutput(byte[] data, int length) {
         if (callback != null) {
-            mainHandler.post(() -> callback.onOutput(text));
+            mainHandler.post(() -> callback.onOutput(data, length));
         }
     }
 
@@ -433,10 +454,5 @@ public class ProotSession {
         if (callback != null) {
             mainHandler.post(() -> callback.onError(error));
         }
-    }
-
-    private String escapeShellArg(String arg) {
-        if (arg == null) return "''";
-        return "'" + arg.replace("'", "'\\''") + "'";
     }
 }
