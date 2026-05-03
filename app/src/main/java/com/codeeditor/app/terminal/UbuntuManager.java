@@ -1,6 +1,7 @@
 package com.codeeditor.app.terminal;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -32,25 +33,39 @@ import java.util.zip.GZIPInputStream;
  * - Configuring apt sources and initial packages
  * - Managing installed distributions
  * - Starting/stopping proot sessions
+ * - udroid integration for Ubuntu Jammy with XFCE4 desktop
  *
  * No root access required - uses proot for syscall translation.
  */
 public class UbuntuManager {
 
     private static final String TAG = "UbuntuManager";
+    private static final String PREFS_NAME = "codeeditor_linux";
+    private static final String KEY_UDROID_INSTALLED = "udroid_installed";
+    private static final String KEY_AUTO_LOGIN = "auto_login";
+    private static final String KEY_INSTALLED_DISTRO = "installed_distro";
 
     // Distro definitions
     public static final String DISTRO_UBUNTU = "ubuntu";
     public static final String DISTRO_DEBIAN = "debian";
     public static final String DISTRO_ALPINE = "alpine";
+    public static final String DISTRO_UDROID = "udroid"; // Ubuntu Jammy with XFCE4
 
-    // Ubuntu rootfs URLs (official Ubuntu cloud-images / minbase)
+    // Ubuntu rootfs URLs (official Ubuntu cloud-images)
     private static final String UBUNTU_ROOTFS_URL =
             "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-arm64-root.tar.xz";
     private static final String UBUNTU_ROOTFS_URL_ARM =
             "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-armhf-root.tar.xz";
     private static final String UBUNTU_ROOTFS_URL_X86 =
             "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64-root.tar.xz";
+
+    // Ubuntu Jammy (22.04) rootfs for udroid - from RandomCoderOrg
+    private static final String UDROID_JAMMY_ROOTFS_URL =
+            "https://github.com/RandomCoderOrg/ubuntu-on-android/releases/download/v3.0.0/ubuntu-jammy-core-arm64.tar.xz";
+    private static final String UDROID_JAMMY_ROOTFS_URL_ARM =
+            "https://github.com/RandomCoderOrg/ubuntu-on-android/releases/download/v3.0.0/ubuntu-jammy-core-armhf.tar.xz";
+    private static final String UDROID_JAMMY_ROOTFS_URL_X86 =
+            "https://github.com/RandomCoderOrg/ubuntu-on-android/releases/download/v3.0.0/ubuntu-jammy-core-amd64.tar.xz";
 
     // Debian rootfs URLs
     private static final String DEBIAN_ROOTFS_URL =
@@ -64,15 +79,23 @@ public class UbuntuManager {
     private static final String ALPINE_ROOTFS_URL_X86 =
             "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/x86_64/alpine-minirootfs-3.20.0-x86_64.tar.gz";
 
-    // Proot binary source (from Termux packages)
-    private static final String PROOT_URL_ARM64 =
+    // Proot binary from Termux packages (.deb format) - MOST RELIABLE
+    private static final String PROOT_DEB_URL_ARM64 =
             "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-1_arm64.deb";
-    private static final String PROOT_URL_ARM =
+    private static final String PROOT_DEB_URL_ARM =
             "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-1_arm.deb";
-    private static final String PROOT_URL_X86 =
+    private static final String PROOT_DEB_URL_X86 =
             "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0-1_x86_64.deb";
 
-    // We'll use a statically-compiled proot from a reliable source
+    // Alternative proot sources (static binaries)
+    private static final String PROOT_STATIC_ALT_ARM64 =
+            "https://github.com/nicm/proot-static-builds/releases/download/v5.4.0/proot-v5.4.0-static-arm64";
+    private static final String PROOT_STATIC_ALT_ARM =
+            "https://github.com/nicm/proot-static-builds/releases/download/v5.4.0/proot-v5.4.0-static-arm";
+    private static final String PROOT_STATIC_ALT_X86 =
+            "https://github.com/nicm/proot-static-builds/releases/download/v5.4.0/proot-v5.4.0-static-amd64";
+
+    // Original static URLs (may be broken - kept as last fallback)
     private static final String PROOT_STATIC_URL =
             "https://github.com/greentreeboy/proot-static-builds/releases/download/v5.4.0/proot-static-arm64";
     private static final String PROOT_STATIC_URL_ARM =
@@ -81,32 +104,22 @@ public class UbuntuManager {
             "https://github.com/greentreeboy/proot-static-builds/releases/download/v5.4.0/proot-static-amd64";
 
     private final Context context;
-    private final File linuxDir;       // Base directory for all Linux files
-    private final File rootfsDir;      // Root filesystem directory
-    private final File prootBin;       // proot binary path
+    private final File linuxDir;
+    private final File rootfsDir;
+    private final File prootBin;
     private final ExecutorService executor;
     private final Handler mainHandler;
+    private final SharedPreferences prefs;
 
     private volatile boolean isInstalling = false;
     private volatile boolean isDownloadComplete = false;
 
-    /**
-     * Callback interface for installation progress and completion.
-     */
     public interface InstallCallback {
-        /** Called with progress update (0-100) */
         void onProgress(int progress, String message);
-
-        /** Called when installation completes successfully */
         void onComplete();
-
-        /** Called when installation fails */
         void onError(String error);
     }
 
-    /**
-     * Simple progress callback (functional interface for lambdas).
-     */
     @FunctionalInterface
     public interface ProgressCallback {
         void onProgress(int progress, String message);
@@ -119,71 +132,115 @@ public class UbuntuManager {
         this.prootBin = new File(linuxDir, "bin/proot");
         this.executor = Executors.newSingleThreadExecutor();
         this.mainHandler = new Handler(Looper.getMainLooper());
+        this.prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
-    /**
-     * Get the root filesystem directory for the installed distro.
-     */
-    public File getRootfsDir() {
-        return rootfsDir;
-    }
+    public File getRootfsDir() { return rootfsDir; }
+    public File getProotBin() { return prootBin; }
+    public File getLinuxDir() { return linuxDir; }
 
-    /**
-     * Get the proot binary path.
-     */
-    public File getProotBin() {
-        return prootBin;
-    }
-
-    /**
-     * Get the base Linux directory.
-     */
-    public File getLinuxDir() {
-        return linuxDir;
-    }
-
-    /**
-     * Check if a Linux distribution is installed.
-     */
     public boolean isDistroInstalled() {
         return rootfsDir.exists() &&
                 new File(rootfsDir, "bin/sh").exists() &&
                 new File(rootfsDir, "etc").exists();
     }
 
-    /**
-     * Check if proot binary is available.
-     */
     public boolean isProotAvailable() {
         return prootBin.exists() && prootBin.canExecute();
     }
 
-    /**
-     * Check if currently installing.
-     */
-    public boolean isInstalling() {
-        return isInstalling;
+    public boolean isInstalling() { return isInstalling; }
+
+    // ===== udroid Integration =====
+
+    public boolean isUdroidInstalled() {
+        return prefs.getBoolean(KEY_UDROID_INSTALLED, false) && isDistroInstalled();
+    }
+
+    public void setUdroidInstalled(boolean installed) {
+        prefs.edit().putBoolean(KEY_UDROID_INSTALLED, installed).apply();
+    }
+
+    public boolean isAutoLoginEnabled() {
+        return prefs.getBoolean(KEY_AUTO_LOGIN, true);
+    }
+
+    public void setAutoLogin(boolean enabled) {
+        prefs.edit().putBoolean(KEY_AUTO_LOGIN, enabled).apply();
+    }
+
+    public String getInstalledDistro() {
+        return prefs.getString(KEY_INSTALLED_DISTRO, null);
+    }
+
+    private void setInstalledDistro(String distro) {
+        prefs.edit().putString(KEY_INSTALLED_DISTRO, distro).apply();
     }
 
     /**
-     * Get the detected ABI for this device.
+     * Build the proot command for udroid login (Ubuntu Jammy with XFCE4).
      */
+    public String[] buildUdroidLoginCommand() {
+        List<String> cmdList = new ArrayList<>();
+
+        cmdList.add(prootBin.getAbsolutePath());
+        cmdList.add("--link2symlink");
+        cmdList.add("-r");
+        cmdList.add(rootfsDir.getAbsolutePath());
+
+        // Bind mounts
+        cmdList.add("-b"); cmdList.add("/dev");
+        cmdList.add("-b"); cmdList.add("/dev/pts");
+        cmdList.add("-b"); cmdList.add("/proc");
+        cmdList.add("-b"); cmdList.add("/sys");
+        cmdList.add("-b"); cmdList.add("/sdcard");
+        cmdList.add("-b"); cmdList.add("/storage");
+
+        String workDir = com.codeeditor.app.CodeEditorApp.getWorkDirectory();
+        if (workDir != null) {
+            cmdList.add("-b");
+            cmdList.add(workDir + ":/workspace");
+        }
+
+        cmdList.add("-b");
+        cmdList.add(new File(linuxDir, "tmp").getAbsolutePath() + ":/tmp");
+
+        cmdList.add("-h");
+        cmdList.add("codeeditor");
+        cmdList.add("-k");
+        cmdList.add("5.4.0");
+
+        // Run bash login shell for udroid
+        File bashBin = new File(rootfsDir, "bin/bash");
+        if (bashBin.exists()) {
+            cmdList.add("/bin/bash");
+            cmdList.add("-l");
+        } else {
+            cmdList.add("/bin/sh");
+            cmdList.add("-l");
+        }
+
+        return cmdList.toArray(new String[0]);
+    }
+
+    // ===== Device Detection =====
+
     public String getDeviceAbi() {
         String abi = android.os.Build.SUPPORTED_ABIS[0];
         Log.d(TAG, "Device ABI: " + abi);
         return abi;
     }
 
-    /**
-     * Get the appropriate rootfs URL for the current device.
-     */
     public String getRootfsUrl(String distro) {
         String abi = getDeviceAbi();
         boolean isArm64 = abi.equals("arm64-v8a");
         boolean isArm = abi.equals("armeabi-v7a");
-        // x86_64 and others
 
         switch (distro) {
+            case DISTRO_UDROID:
+                if (isArm64) return UDROID_JAMMY_ROOTFS_URL;
+                if (isArm) return UDROID_JAMMY_ROOTFS_URL_ARM;
+                return UDROID_JAMMY_ROOTFS_URL_X86;
             case DISTRO_DEBIAN:
                 return DEBIAN_ROOTFS_URL;
             case DISTRO_ALPINE:
@@ -198,24 +255,8 @@ public class UbuntuManager {
         }
     }
 
-    /**
-     * Get the appropriate proot binary URL for the current device.
-     */
-    public String getProotUrl() {
-        String abi = getDeviceAbi();
-        boolean isArm64 = abi.equals("arm64-v8a");
-        boolean isArm = abi.equals("armeabi-v7a");
+    // ===== Installation =====
 
-        if (isArm64) return PROOT_STATIC_URL;
-        if (isArm) return PROOT_STATIC_URL_ARM;
-        return PROOT_STATIC_URL_X86;
-    }
-
-    /**
-     * Install a Linux distribution (download rootfs + proot, extract, configure).
-     * This is a long-running operation - must be called from background thread
-     * or use installDistroAsync().
-     */
     public void installDistro(String distro, InstallCallback callback) {
         if (isInstalling) {
             notifyError(callback, "Installation already in progress");
@@ -224,11 +265,9 @@ public class UbuntuManager {
 
         isInstalling = true;
         try {
-            // Step 1: Create directories
             notifyProgress(callback, 5, "Creating directories...");
             createDirectories();
 
-            // Step 2: Download proot binary
             if (!isProotAvailable()) {
                 notifyProgress(callback, 10, "Downloading proot...");
                 downloadProot();
@@ -238,10 +277,11 @@ public class UbuntuManager {
                 notifyProgress(callback, 25, "Proot already available");
             }
 
-            // Step 3: Download rootfs
+            String distroToDownload = DISTRO_UDROID.equals(distro) ? DISTRO_UBUNTU : distro;
+            String rootfsUrl = getRootfsUrl(distro);
+
             notifyProgress(callback, 30, "Downloading " + distro + " rootfs...");
             File rootfsArchive = downloadRootfs(distro, (progress, msg) -> {
-                // Scale progress from 30-70
                 int scaledProgress = 30 + (progress * 40 / 100);
                 notifyProgress(callback, scaledProgress, msg);
             });
@@ -251,23 +291,26 @@ public class UbuntuManager {
                 return;
             }
 
-            // Step 4: Extract rootfs
             notifyProgress(callback, 70, "Extracting " + distro + " rootfs...");
             extractRootfs(rootfsArchive, (progress, msg) -> {
-                // Scale progress from 70-90
                 int scaledProgress = 70 + (progress * 20 / 100);
                 notifyProgress(callback, scaledProgress, msg);
             });
 
-            // Step 5: Configure the distro
             notifyProgress(callback, 90, "Configuring " + distro + "...");
             configureDistro(distro);
 
-            // Step 6: Clean up
+            if (DISTRO_UDROID.equals(distro)) {
+                notifyProgress(callback, 92, "Setting up udroid environment...");
+                configureUdroid();
+                setUdroidInstalled(true);
+            }
+
+            setInstalledDistro(distro);
+
             notifyProgress(callback, 95, "Cleaning up...");
             rootfsArchive.delete();
 
-            // Done
             notifyProgress(callback, 100, "Installation complete!");
             notifyComplete(callback);
 
@@ -279,88 +322,66 @@ public class UbuntuManager {
         }
     }
 
-    /**
-     * Install a Linux distribution asynchronously.
-     */
     public void installDistroAsync(String distro, InstallCallback callback) {
         executor.execute(() -> installDistro(distro, callback));
     }
 
-    /**
-     * Uninstall the Linux distribution.
-     */
     public void uninstallDistro() {
         if (rootfsDir.exists()) {
             deleteRecursive(rootfsDir);
         }
+        setUdroidInstalled(false);
+        setInstalledDistro(null);
     }
 
-    /**
-     * Build the proot command to start a Linux session.
-     *
-     * @param command Optional command to run (if null, starts interactive shell)
-     * @return The proot command array
-     */
+    // ===== Proot Command Building =====
+
     public String[] buildProotCommand(String command) {
         List<String> cmdList = new ArrayList<>();
 
-        // proot binary
         cmdList.add(prootBin.getAbsolutePath());
-
-        // Link2symlink (required for many Linux programs)
         cmdList.add("--link2symlink");
-
-        // Root filesystem
         cmdList.add("-r");
         cmdList.add(rootfsDir.getAbsolutePath());
 
-        // Bind mounts for Android system integration
-        cmdList.add("-b");
-        cmdList.add("/dev");
-        cmdList.add("-b");
-        cmdList.add("/proc");
-        cmdList.add("-b");
-        cmdList.add("/sys");
-        cmdList.add("-b");
-        cmdList.add("/sdcard");
-        cmdList.add("-b");
-        cmdList.add("/storage");
+        cmdList.add("-b"); cmdList.add("/dev");
+        cmdList.add("-b"); cmdList.add("/proc");
+        cmdList.add("-b"); cmdList.add("/sys");
+        cmdList.add("-b"); cmdList.add("/sdcard");
+        cmdList.add("-b"); cmdList.add("/storage");
 
-        // Bind app's working directory for code execution
         String workDir = com.codeeditor.app.CodeEditorApp.getWorkDirectory();
         if (workDir != null) {
             cmdList.add("-b");
             cmdList.add(workDir + ":/workspace");
         }
 
-        // Bind /tmp
         cmdList.add("-b");
         cmdList.add(new File(linuxDir, "tmp").getAbsolutePath() + ":/tmp");
 
-        // Change hostname
         cmdList.add("-h");
         cmdList.add("codeeditor");
-
-        // Set kernel version for compatibility
         cmdList.add("-k");
         cmdList.add("5.4.0");
 
-        // Change to home directory and run shell or command
         if (command != null && !command.isEmpty()) {
             cmdList.add("/bin/sh");
             cmdList.add("-c");
             cmdList.add(command);
         } else {
-            cmdList.add("/bin/sh");
-            cmdList.add("-l");
+            File bashBin = new File(rootfsDir, "bin/bash");
+            if (bashBin.exists()) {
+                cmdList.add("/bin/bash");
+                cmdList.add("-l");
+            } else {
+                cmdList.add("/bin/sh");
+                cmdList.add("-l");
+            }
         }
 
         return cmdList.toArray(new String[0]);
     }
 
-    /**
-     * Build environment variables for proot session.
-     */
     public String[] buildProotEnvironment() {
         List<String> envList = new ArrayList<>();
 
@@ -371,16 +392,14 @@ public class UbuntuManager {
         envList.add("TERM=xterm-256color");
         envList.add("LANG=en_US.UTF-8");
         envList.add("LC_ALL=en_US.UTF-8");
-        envList.add("SHELL=/bin/sh");
+        envList.add("SHELL=/bin/bash");
         envList.add("PROOT_NO_SECCOMP=1");
         envList.add("HOSTNAME=codeeditor");
         envList.add("TMPDIR=/tmp");
-
-        // Android-specific
         envList.add("ANDROID_ROOT=" + android.os.Build.VERSION.RELEASE);
         envList.add("LINUX_ROOTFS=" + rootfsDir.getAbsolutePath());
+        envList.add("DISPLAY=:0");
 
-        // Inherit some system env vars
         String systemPath = System.getenv("PATH");
         if (systemPath != null) {
             envList.add("SYSTEM_PATH=" + systemPath);
@@ -389,9 +408,6 @@ public class UbuntuManager {
         return envList.toArray(new String[0]);
     }
 
-    /**
-     * Get the installed distro info.
-     */
     public DistroInfo getInstalledDistroInfo() {
         if (!isDistroInstalled()) return null;
 
@@ -399,28 +415,20 @@ public class UbuntuManager {
         info.name = "Linux";
         info.rootfsPath = rootfsDir.getAbsolutePath();
 
-        // Try to detect distro from /etc/os-release
         File osRelease = new File(rootfsDir, "etc/os-release");
         if (osRelease.exists()) {
             try {
                 String content = readFile(osRelease);
-                if (content.contains("Ubuntu")) {
-                    info.name = "Ubuntu";
-                } else if (content.contains("Debian")) {
-                    info.name = "Debian";
-                } else if (content.contains("Alpine")) {
-                    info.name = "Alpine";
-                }
+                if (content.contains("Ubuntu")) info.name = "Ubuntu";
+                else if (content.contains("Debian")) info.name = "Debian";
+                else if (content.contains("Alpine")) info.name = "Alpine";
 
-                // Extract version
                 String[] lines = content.split("\n");
                 for (String line : lines) {
                     if (line.startsWith("PRETTY_NAME=")) {
-                        info.prettyName = line.substring("PRETTY_NAME=".length())
-                                .replace("\"", "").trim();
+                        info.prettyName = line.substring("PRETTY_NAME=".length()).replace("\"", "").trim();
                     } else if (line.startsWith("VERSION_ID=")) {
-                        info.versionId = line.substring("VERSION_ID=".length())
-                                .replace("\"", "").trim();
+                        info.versionId = line.substring("VERSION_ID=".length()).replace("\"", "").trim();
                     }
                 }
             } catch (Exception e) {
@@ -428,12 +436,15 @@ public class UbuntuManager {
             }
         }
 
+        if (isUdroidInstalled()) {
+            info.name = "udroid";
+            if (info.prettyName == null) info.prettyName = "Ubuntu Jammy (udroid)";
+        }
+
         return info;
     }
 
-    // =====================================================================
-    // Private: Installation Steps
-    // =====================================================================
+    // ===== Private: Installation Steps =====
 
     private void createDirectories() {
         linuxDir.mkdirs();
@@ -443,59 +454,296 @@ public class UbuntuManager {
         new File(linuxDir, "cache").mkdirs();
     }
 
+    /**
+     * Download proot binary with multiple fallback sources.
+     * Priority: Termux .deb (extract binary) > Alternative static builds > Original static > System paths
+     */
     private void downloadProot() throws IOException {
-        String prootUrl = getProotUrl();
-        File prootFile = prootBin;
+        String abi = getDeviceAbi();
+        boolean isArm64 = abi.equals("arm64-v8a");
+        boolean isArm = abi.equals("armeabi-v7a");
 
-        Log.d(TAG, "Downloading proot from: " + prootUrl);
+        Log.d(TAG, "Downloading proot for ABI: " + abi);
 
-        // Try multiple sources for proot
-        String[] prootUrls = {
-                prootUrl,
-                // Fallback: Try direct Termux repository
-                "https://raw.githubusercontent.com/greentreeboy/proot-static-builds/main/proot-static-arm64",
-                // Another fallback: Build from a known working source
-        };
-
-        IOException lastError = null;
-        for (String url : prootUrls) {
-            try {
-                downloadFile(url, prootFile);
-                if (prootFile.exists() && prootFile.length() > 1000) {
-                    // Successfully downloaded
-                    prootFile.setExecutable(true, false);
-                    prootFile.setReadable(true, false);
-                    Log.d(TAG, "Proot downloaded successfully: " + prootFile.length() + " bytes");
+        // Strategy 1: Extract proot from Termux .deb package (MOST RELIABLE)
+        String debUrl = isArm64 ? PROOT_DEB_URL_ARM64 : (isArm ? PROOT_DEB_URL_ARM : PROOT_DEB_URL_X86);
+        try {
+            Log.d(TAG, "Trying Termux .deb: " + debUrl);
+            File debFile = new File(linuxDir, "cache/proot.deb");
+            downloadFile(debUrl, debFile);
+            if (debFile.exists() && debFile.length() > 1000) {
+                Log.d(TAG, "Downloaded .deb: " + debFile.length() + " bytes, extracting...");
+                if (extractProotFromDeb(debFile, prootBin)) {
+                    prootBin.setExecutable(true, false);
+                    prootBin.setReadable(true, false);
+                    Log.d(TAG, "Proot extracted from .deb: " + prootBin.length() + " bytes");
+                    debFile.delete();
                     return;
                 }
-            } catch (IOException e) {
-                lastError = e;
-                Log.w(TAG, "Failed to download proot from: " + url, e);
+                Log.w(TAG, "Failed to extract proot from .deb, trying alternatives");
             }
+            debFile.delete();
+        } catch (IOException e) {
+            Log.w(TAG, "Termux .deb download failed: " + e.getMessage());
         }
 
-        // If download fails, try to find proot on the system
+        // Strategy 2: Alternative static proot builds (nicm)
+        String altUrl = isArm64 ? PROOT_STATIC_ALT_ARM64 : (isArm ? PROOT_STATIC_ALT_ARM : PROOT_STATIC_ALT_X86);
+        try {
+            Log.d(TAG, "Trying alternative static: " + altUrl);
+            downloadFile(altUrl, prootBin);
+            if (prootBin.exists() && prootBin.length() > 1000) {
+                prootBin.setExecutable(true, false);
+                prootBin.setReadable(true, false);
+                Log.d(TAG, "Proot from alt static: " + prootBin.length() + " bytes");
+                return;
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "Alt static download failed: " + e.getMessage());
+        }
+
+        // Strategy 3: Original static builds (may be broken)
+        String staticUrl = isArm64 ? PROOT_STATIC_URL : (isArm ? PROOT_STATIC_URL_ARM : PROOT_STATIC_URL_X86);
+        try {
+            Log.d(TAG, "Trying original static: " + staticUrl);
+            downloadFile(staticUrl, prootBin);
+            if (prootBin.exists() && prootBin.length() > 1000) {
+                prootBin.setExecutable(true, false);
+                prootBin.setReadable(true, false);
+                Log.d(TAG, "Proot from original static: " + prootBin.length() + " bytes");
+                return;
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "Original static download failed: " + e.getMessage());
+        }
+
+        // Strategy 4: Try extracting from bundled assets
+        try {
+            Log.d(TAG, "Trying bundled assets");
+            String assetName = "proot-" + abi;
+            if (extractAsset(assetName, prootBin)) {
+                prootBin.setExecutable(true, false);
+                prootBin.setReadable(true, false);
+                Log.d(TAG, "Proot from bundled asset: " + prootBin.length() + " bytes");
+                return;
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "Bundled asset extraction failed: " + e.getMessage());
+        }
+
+        // Strategy 5: Copy from system/Termux paths
         String[] systemProotPaths = {
                 "/data/data/com.termux/files/usr/bin/proot",
                 "/usr/bin/proot",
                 "/system/bin/proot"
         };
-
         for (String path : systemProotPaths) {
             File f = new File(path);
             if (f.exists() && f.canExecute()) {
-                // Copy to our bin directory
-                copyFile(f, prootFile);
-                prootFile.setExecutable(true, false);
+                copyFile(f, prootBin);
+                prootBin.setExecutable(true, false);
                 Log.d(TAG, "Using system proot from: " + path);
                 return;
             }
         }
 
-        // If all else fails, we'll use a bundled approach or error out
-        if (lastError != null) {
-            throw new IOException("Failed to download proot: " + lastError.getMessage() +
-                    "\n\nPlease install Termux first, then try again.");
+        throw new IOException("Failed to download proot from all sources.\n" +
+                "Please ensure you have internet connection.\n" +
+                "Tip: Install Termux from F-Droid, then try again.");
+    }
+
+    /**
+     * Extract proot binary from a Termux .deb package.
+     * A .deb file is an ar archive containing data.tar.xz which contains the binary.
+     */
+    private boolean extractProotFromDeb(File debFile, File outputProot) throws IOException {
+        try (FileInputStream fis = new FileInputStream(debFile)) {
+            // Read ar archive header
+            byte[] magic = new byte[8];
+            if (fis.read(magic) != 8) return false;
+            String magicStr = new String(magic, "ASCII");
+            if (!magicStr.equals("!<arch>\n")) {
+                Log.w(TAG, "Not a valid ar archive");
+                return false;
+            }
+
+            // Iterate through ar entries to find data.tar
+            File dataTarFile = null;
+            while (true) {
+                // ar entry header: 60 bytes
+                byte[] header = new byte[60];
+                int read = fis.read(header);
+                if (read < 60) break;
+
+                String name = new String(header, 0, 16, "ASCII").trim();
+                String sizeStr = new String(header, 48, 10, "ASCII").trim();
+                long size;
+                try {
+                    size = Long.parseLong(sizeStr);
+                } catch (NumberFormatException e) {
+                    break;
+                }
+
+                // Skip the 2-byte header end marker
+                byte[] endMarker = new byte[2];
+                fis.read(endMarker);
+
+                // Check if this is data.tar.xz, data.tar.gz, or data.tar
+                boolean isDataTar = name.startsWith("data.tar");
+                if (isDataTar) {
+                    // Extract data.tar to a temp file
+                    dataTarFile = new File(linuxDir, "cache/data.tar");
+                    try (FileOutputStream fos = new FileOutputStream(dataTarFile)) {
+                        byte[] buffer = new byte[8192];
+                        long remaining = size;
+                        while (remaining > 0) {
+                            int toRead = (int) Math.min(buffer.length, remaining);
+                            int bytesRead = fis.read(buffer, 0, toRead);
+                            if (bytesRead == -1) break;
+                            fos.write(buffer, 0, bytesRead);
+                            remaining -= bytesRead;
+                        }
+                    }
+                    break; // Found data.tar
+                } else {
+                    // Skip this entry
+                    long paddedSize = (size + 1) & ~1L; // 2-byte padding
+                    long remaining = paddedSize;
+                    while (remaining > 0) {
+                        long skipped = fis.skip(remaining);
+                        if (skipped <= 0) break;
+                        remaining -= skipped;
+                    }
+                }
+            }
+
+            if (dataTarFile == null || !dataTarFile.exists()) {
+                Log.w(TAG, "data.tar not found in .deb");
+                return false;
+            }
+
+            // Extract proot binary from data.tar
+            boolean success = extractProotFromDataTar(dataTarFile, outputProot);
+            dataTarFile.delete();
+            return success;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to extract proot from .deb", e);
+            return false;
+        }
+    }
+
+    /**
+     * Extract the proot binary from data.tar (which may be .xz or .gz compressed).
+     */
+    private boolean extractProotFromDataTar(File dataTarFile, File outputProot) {
+        try {
+            String name = dataTarFile.getName();
+
+            // Decompress if needed
+            File actualTar = dataTarFile;
+            if (name.endsWith(".xz") || dataTarFile.length() > 0) {
+                // Check if xz compressed by reading magic bytes
+                byte[] magic = new byte[6];
+                try (FileInputStream fis = new FileInputStream(dataTarFile)) {
+                    fis.read(magic);
+                }
+                String magicStr = new String(magic, "ASCII");
+
+                if (magicStr.startsWith("\u00FD7zXZ\u00AA") || magicStr.startsWith("\u00FD7zXZ")) {
+                    // XZ compressed - use system xz to decompress
+                    File decompressed = new File(linuxDir, "cache/data_decompressed.tar");
+                    ProcessBuilder pb = new ProcessBuilder("sh", "-c",
+                            "xz -d -c '" + dataTarFile.getAbsolutePath() + "' > '" +
+                                    decompressed.getAbsolutePath() + "'");
+                    pb.redirectErrorStream(true);
+                    Process p = pb.start();
+                    int exit = p.waitFor();
+                    if (exit == 0 && decompressed.exists() && decompressed.length() > 0) {
+                        actualTar = decompressed;
+                    }
+                } else if (magic[0] == 0x1f && magic[1] == (byte) 0x8b) {
+                    // GZIP compressed
+                    File decompressed = new File(linuxDir, "cache/data_decompressed.tar");
+                    try (FileInputStream fis = new FileInputStream(dataTarFile);
+                         GZIPInputStream gis = new GZIPInputStream(fis);
+                         FileOutputStream fos = new FileOutputStream(decompressed)) {
+                        byte[] buffer = new byte[8192];
+                        int len;
+                        while ((len = gis.read(buffer)) != -1) {
+                            fos.write(buffer, 0, len);
+                        }
+                    }
+                    actualTar = decompressed;
+                }
+            }
+
+            // Now extract proot from the tar archive using system tar
+            File extractDir = new File(linuxDir, "cache/extract");
+            extractDir.mkdirs();
+
+            ProcessBuilder pb = new ProcessBuilder("tar", "-x", "-f",
+                    actualTar.getAbsolutePath(), "-C", extractDir.getAbsolutePath());
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            int exitCode = p.waitFor();
+
+            // Find proot binary in extracted files
+            File prootInTar = new File(extractDir, "data/data/com.termux/files/usr/bin/proot");
+            if (!prootInTar.exists()) {
+                // Search for it
+                prootInTar = findFileRecursive(extractDir, "proot");
+            }
+
+            if (prootInTar != null && prootInTar.exists() && prootInTar.length() > 1000) {
+                copyFile(prootInTar, outputProot);
+                outputProot.setExecutable(true, false);
+                Log.d(TAG, "Extracted proot: " + outputProot.length() + " bytes");
+            }
+
+            // Clean up
+            deleteRecursive(extractDir);
+            if (actualTar != dataTarFile) actualTar.delete();
+
+            return outputProot.exists() && outputProot.length() > 1000;
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to extract proot from data.tar", e);
+            return false;
+        }
+    }
+
+    /**
+     * Find a file by name recursively in a directory.
+     */
+    private File findFileRecursive(File dir, String name) {
+        File[] files = dir.listFiles();
+        if (files == null) return null;
+        for (File f : files) {
+            if (f.isFile() && f.getName().equals(name)) return f;
+            if (f.isDirectory()) {
+                File found = findFileRecursive(f, name);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extract a file from assets to the specified destination.
+     */
+    private boolean extractAsset(String assetName, File dest) throws IOException {
+        try (InputStream is = context.getAssets().open(assetName);
+             FileOutputStream fos = new FileOutputStream(dest)) {
+            byte[] buffer = new byte[8192];
+            int len;
+            while ((len = is.read(buffer)) != -1) {
+                fos.write(buffer, 0, len);
+            }
+            return dest.exists() && dest.length() > 0;
+        } catch (IOException e) {
+            Log.d(TAG, "Asset '" + assetName + "' not found");
+            return false;
         }
     }
 
@@ -516,7 +764,6 @@ public class UbuntuManager {
         cacheDir.mkdirs();
         File rootfsArchive = new File(cacheDir, distro + "-rootfs" + extension);
 
-        // Check if already downloaded
         if (rootfsArchive.exists() && rootfsArchive.length() > 1000000) {
             Log.d(TAG, "Rootfs already cached: " + rootfsArchive.length() + " bytes");
             notifyProgress(progressCallback, 100, "Using cached rootfs");
@@ -544,7 +791,6 @@ public class UbuntuManager {
                 throw new IOException("Unknown archive format: " + name);
             }
         } catch (IOException e) {
-            // Fallback: try using system tar command
             Log.w(TAG, "Java extraction failed, trying system tar", e);
             try {
                 extractWithSystemTar(archive, rootfsDir);
@@ -568,7 +814,6 @@ public class UbuntuManager {
             while ((entry = tis.getNextEntry()) != null) {
                 File outputFile = new File(destDir, entry.getName());
 
-                // Security: prevent path traversal
                 if (!outputFile.getCanonicalPath().startsWith(destDir.getCanonicalPath() + File.separator)) {
                     continue;
                 }
@@ -584,7 +829,6 @@ public class UbuntuManager {
                             os.write(buffer, 0, len);
                         }
                     }
-                    // Preserve executable permission
                     if ((entry.getMode() & 0100) != 0) {
                         outputFile.setExecutable(true, false);
                     }
@@ -603,12 +847,9 @@ public class UbuntuManager {
     }
 
     private void extractTarXz(File archive, File destDir, ProgressCallback progressCallback) throws IOException {
-        // For .tar.xz files, use system tar command since Java doesn't have built-in XZ support
-        // Try using the system's tar command
         try {
             extractWithSystemTar(archive, destDir);
         } catch (Exception e) {
-            // If system tar doesn't support xz, try with xzcat pipe
             Log.w(TAG, "System tar failed for xz, trying xzcat pipeline", e);
             try {
                 ProcessBuilder pb = new ProcessBuilder("sh", "-c",
@@ -618,7 +859,6 @@ public class UbuntuManager {
                 Process p = pb.start();
                 int exit = p.waitFor();
                 if (exit != 0) {
-                    // Read error output
                     BufferedReader reader = new BufferedReader(
                             new InputStreamReader(p.getInputStream()));
                     StringBuilder err = new StringBuilder();
@@ -674,7 +914,6 @@ public class UbuntuManager {
             pb.redirectErrorStream(true);
             Process p = pb.start();
 
-            // Read output in background to prevent blocking
             BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
             String line;
             while ((line = reader.readLine()) != null) {
@@ -712,7 +951,7 @@ public class UbuntuManager {
         File hostname = new File(rootfsDir, "etc/hostname");
         writeFile(hostname, "codeeditor\n");
 
-        // Create profile.d script for environment setup
+        // Create profile.d script
         File profileDir = new File(rootfsDir, "etc/profile.d");
         profileDir.mkdirs();
 
@@ -771,15 +1010,15 @@ public class UbuntuManager {
                 "echo '  Type \"help\" for available commands'\n" +
                 "echo ''\n");
 
-        // Set up /etc/passwd (if not exists)
+        // Set up /etc/passwd
         File passwd = new File(rootfsDir, "etc/passwd");
         if (!passwd.exists()) {
             writeFile(passwd,
-                    "root:x:0:0:root:/root:/bin/sh\n" +
+                    "root:x:0:0:root:/root:/bin/bash\n" +
                     "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin\n");
         }
 
-        // Set up /etc/group (if not exists)
+        // Set up /etc/group
         File group = new File(rootfsDir, "etc/group");
         if (!group.exists()) {
             writeFile(group,
@@ -798,14 +1037,24 @@ public class UbuntuManager {
         tmp.setReadable(true, false);
         tmp.setExecutable(true, false);
 
-        // Set up apt sources for Ubuntu/Debian
-        if (DISTRO_UBUNTU.equals(distro)) {
+        // Create /dev/pts directory
+        File devPts = new File(rootfsDir, "dev/pts");
+        devPts.mkdirs();
+
+        // Create /run directory
+        File runDir = new File(rootfsDir, "run");
+        runDir.mkdirs();
+        runDir.setWritable(true, false);
+
+        // Set up apt sources
+        if (DISTRO_UBUNTU.equals(distro) || DISTRO_UDROID.equals(distro)) {
+            String ubuntuCodename = DISTRO_UDROID.equals(distro) ? "jammy" : "noble";
             File aptSources = new File(rootfsDir, "etc/apt/sources.list");
             if (!aptSources.exists()) {
                 writeFile(aptSources,
-                        "deb http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse\n" +
-                        "deb http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse\n" +
-                        "deb http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse\n");
+                        "deb http://ports.ubuntu.com/ubuntu-ports " + ubuntuCodename + " main restricted universe multiverse\n" +
+                        "deb http://ports.ubuntu.com/ubuntu-ports " + ubuntuCodename + "-updates main restricted universe multiverse\n" +
+                        "deb http://ports.ubuntu.com/ubuntu-ports " + ubuntuCodename + "-security main restricted universe multiverse\n");
             }
         } else if (DISTRO_DEBIAN.equals(distro)) {
             File aptSources = new File(rootfsDir, "etc/apt/sources.list");
@@ -826,33 +1075,135 @@ public class UbuntuManager {
         Log.d(TAG, distro + " configuration completed");
     }
 
-    // =====================================================================
-    // Private: Download Utilities
-    // =====================================================================
+    /**
+     * Configure udroid-specific settings (Ubuntu Jammy with XFCE4).
+     */
+    private void configureUdroid() throws IOException {
+        // Update .bashrc for udroid
+        File rootHome = new File(rootfsDir, "root");
+        rootHome.mkdirs();
+
+        File bashrc = new File(rootHome, ".bashrc");
+        writeFile(bashrc,
+                "# ~/.bashrc - udroid CodeEditor Terminal\n" +
+                "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+                "export TERM=xterm-256color\n" +
+                "export LANG=en_US.UTF-8\n" +
+                "export DISPLAY=:0\n" +
+                "export PULSE_SERVER=tcp:127.0.0.1:4713\n" +
+                "\n" +
+                "# If not running interactively, don't do anything\n" +
+                "case $- in\n" +
+                "    *i*) ;;\n" +
+                "      *) return;;\n" +
+                "esac\n" +
+                "\n" +
+                "# udroid-style prompt\n" +
+                "PS1='\\[\\e[1;32m\\]\\u@udroid\\[\\e[0m\\]:\\[\\e[1;34m\\]\\w\\[\\e[0m\\]\\$ '\n" +
+                "\n" +
+                "# Aliases\n" +
+                "alias ll='ls -alF'\n" +
+                "alias la='ls -A'\n" +
+                "alias l='ls -CF'\n" +
+                "alias cls='clear'\n" +
+                "alias update='apt update && apt upgrade -y'\n" +
+                "alias install='apt install -y'\n" +
+                "\n" +
+                "# udroid helper functions\n" +
+                "udroid-setup-desktop() {\n" +
+                "    echo 'Setting up XFCE4 desktop environment...'\n" +
+                "    apt update\n" +
+                "    apt install -y xfce4 xfce4-terminal dbus-x11\n" +
+                "    echo 'Desktop environment installed!'\n" +
+                "    echo 'Use a VNC viewer to connect to display :0'\n" +
+                "}\n" +
+                "\n" +
+                "udroid-setup-vnc() {\n" +
+                "    apt install -y tigervnc-standalone-server tigervnc-common\n" +
+                "    mkdir -p ~/.vnc\n" +
+                "    echo '#!/bin/sh' > ~/.vnc/xstartup\n" +
+                "    echo 'dbus-launch --exit-with-session startxfce4' >> ~/.vnc/xstartup\n" +
+                "    chmod +x ~/.vnc/xstartup\n" +
+                "    vncserver :0 -geometry 1280x720 -depth 24\n" +
+                "    echo 'VNC server started on display :0'\n" +
+                "    echo 'Connect with VNC viewer to 127.0.0.1:5900'\n" +
+                "}\n" +
+                "\n" +
+                "# Welcome message\n" +
+                "echo ''\n" +
+                "echo '  \\033[1;32mudroid CodeEditor Terminal\\033[0m'\n" +
+                "echo '  Ubuntu Jammy (22.04) via proot'\n" +
+                "echo '  Workspace: /workspace'\n" +
+                "echo ''\n" +
+                "echo '  Quick Commands:'\n" +
+                "echo '    udroid-setup-desktop  - Install XFCE4 desktop'\n" +
+                "echo '    udroid-setup-vnc      - Setup VNC server'\n" +
+                "echo '    update                - apt update && upgrade'\n" +
+                "echo '    install <pkg>         - apt install package'\n" +
+                "echo ''\n");
+
+        // Create udroid setup script
+        File udroidSetup = new File(rootfsDir, "usr/local/bin/udroid-setup");
+        udroidSetup.getParentFile().mkdirs();
+        writeFile(udroidSetup,
+                "#!/bin/bash\n" +
+                "# udroid Setup Script for CodeEditor\n" +
+                "set -e\n" +
+                "\n" +
+                "echo '=== udroid CodeEditor Setup ==='\n" +
+                "echo ''\n" +
+                "\n" +
+                "# Update system\n" +
+                "echo '[1/3] Updating system packages...'\n" +
+                "apt update && apt upgrade -y\n" +
+                "\n" +
+                "# Install essential packages\n" +
+                "echo '[2/3] Installing essential packages...'\n" +
+                "apt install -y nano wget curl git sudo apt-utils dialog\n" +
+                "\n" +
+                "# Install XFCE4 desktop\n" +
+                "echo '[3/3] Installing XFCE4 desktop (this may take a while)...'\n" +
+                "apt install -y xfce4 xfce4-terminal dbus-x11\n" +
+                "\n" +
+                "echo ''\n" +
+                "echo '=== Setup Complete! ==='\n" +
+                "echo 'Use udroid-setup-vnc to start a VNC desktop session'\n");
+        udroidSetup.setExecutable(true, false);
+
+        Log.d(TAG, "udroid configuration completed");
+    }
+
+    // ===== Download Utilities =====
 
     private void downloadFile(String urlStr, File destFile) throws IOException {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setConnectTimeout(30000);
         conn.setReadTimeout(60000);
-        conn.setRequestProperty("User-Agent", "CodeEditor/1.3.0");
+        conn.setRequestProperty("User-Agent", "CodeEditor/1.3.1");
         conn.setFollowRedirects(true);
         conn.setInstanceFollowRedirects(true);
 
         try {
             int responseCode = conn.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                // Handle redirects manually
-                if (responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+            // Handle redirects
+            int redirects = 0;
+            while ((responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
                     responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
-                    responseCode == 307 || responseCode == 308) {
-                    String newUrl = conn.getHeaderField("Location");
-                    if (newUrl != null) {
-                        conn.disconnect();
-                        downloadFile(newUrl, destFile);
-                        return;
-                    }
-                }
+                    responseCode == 307 || responseCode == 308) && redirects < 5) {
+                String newUrl = conn.getHeaderField("Location");
+                conn.disconnect();
+                if (newUrl == null) break;
+                url = new URL(newUrl);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setConnectTimeout(30000);
+                conn.setReadTimeout(60000);
+                conn.setRequestProperty("User-Agent", "CodeEditor/1.3.1");
+                responseCode = conn.getResponseCode();
+                redirects++;
+            }
+
+            if (responseCode != HttpURLConnection.HTTP_OK) {
                 throw new IOException("Server returned HTTP " + responseCode);
             }
 
@@ -876,13 +1227,12 @@ public class UbuntuManager {
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setConnectTimeout(60000);
         conn.setReadTimeout(120000);
-        conn.setRequestProperty("User-Agent", "CodeEditor/1.3.0");
+        conn.setRequestProperty("User-Agent", "CodeEditor/1.3.1");
         conn.setFollowRedirects(true);
         conn.setInstanceFollowRedirects(true);
 
         try {
             int responseCode = conn.getResponseCode();
-            // Handle redirects
             int redirects = 0;
             while ((responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
                     responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
@@ -894,7 +1244,7 @@ public class UbuntuManager {
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setConnectTimeout(60000);
                 conn.setReadTimeout(120000);
-                conn.setRequestProperty("User-Agent", "CodeEditor/1.3.0");
+                conn.setRequestProperty("User-Agent", "CodeEditor/1.3.1");
                 responseCode = conn.getResponseCode();
                 redirects++;
             }
@@ -925,7 +1275,6 @@ public class UbuntuManager {
                             notifyProgress(progressCallback, progress, "Downloading: " + sizeStr);
                         }
                     } else {
-                        // Unknown file size - show downloaded amount
                         int progress = (int) Math.min(totalRead / 100000, 95);
                         if (progress > lastProgress + 2) {
                             lastProgress = progress;
@@ -943,9 +1292,7 @@ public class UbuntuManager {
         }
     }
 
-    // =====================================================================
-    // Private: File Utilities
-    // =====================================================================
+    // ===== File Utilities =====
 
     private void writeFile(File file, String content) throws IOException {
         file.getParentFile().mkdirs();
@@ -998,9 +1345,7 @@ public class UbuntuManager {
         return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
     }
 
-    // =====================================================================
-    // Private: Notification Helpers
-    // =====================================================================
+    // ===== Notification Helpers =====
 
     private void notifyProgress(InstallCallback callback, int progress, String message) {
         if (callback != null) {
@@ -1027,6 +1372,13 @@ public class UbuntuManager {
     }
 
     /**
+     * Clean up resources.
+     */
+    public void destroy() {
+        executor.shutdownNow();
+    }
+
+    /**
      * Information about an installed distribution.
      */
     public static class DistroInfo {
@@ -1037,165 +1389,125 @@ public class UbuntuManager {
 
         @Override
         public String toString() {
-            return prettyName != null ? prettyName : name + " " + (versionId != null ? versionId : "");
+            if (prettyName != null) return prettyName;
+            return name + (versionId != null ? " " + versionId : "");
         }
     }
 
-    /**
-     * Simple TarInputStream implementation for .tar files.
-     * Handles basic tar format with POSIX headers.
-     */
+    // ===== TarInputStream and TarEntry (minimal tar parser) =====
+    // These inner classes provide a minimal tar archive parser for .tar.gz files.
+    // For .tar.xz files, we fall back to the system tar command.
+
     private static class TarInputStream extends InputStream {
         private final InputStream is;
+        private long entryRemaining = 0;
         private TarEntry currentEntry;
-        private long remainingBytes;
-        private boolean closed = false;
 
-        public TarInputStream(InputStream is) {
+        TarInputStream(InputStream is) {
             this.is = is;
         }
 
-        public TarEntry getNextEntry() throws IOException {
-            // Finish reading any remaining data from the current entry
-            if (currentEntry != null && remainingBytes > 0) {
-                byte[] skip = new byte[8192];
-                while (remainingBytes > 0) {
-                    int toRead = (int) Math.min(skip.length, remainingBytes);
-                    int read = is.read(skip, 0, toRead);
-                    if (read == -1) break;
-                    remainingBytes -= read;
+        TarEntry getNextEntry() throws IOException {
+            // Skip remaining data of current entry
+            if (currentEntry != null && entryRemaining > 0) {
+                long skip = entryRemaining;
+                while (skip > 0) {
+                    long s = is.skip(skip);
+                    if (s <= 0) break;
+                    skip -= s;
                 }
                 // Skip padding
-                skipPadding();
+                long padding = (512 - (entryRemaining % 512)) % 512;
+                while (padding > 0) {
+                    long s = is.skip(padding);
+                    if (s <= 0) break;
+                    padding -= s;
+                }
             }
 
-            // Read tar header (512 bytes)
+            // Read 512-byte header
             byte[] header = new byte[512];
             int totalRead = 0;
             while (totalRead < 512) {
-                int read = is.read(header, totalRead, 512 - totalRead);
-                if (read == -1) {
-                    return null; // End of archive
-                }
-                totalRead += read;
+                int r = is.read(header, totalRead, 512 - totalRead);
+                if (r == -1) return null; // End of archive
+                totalRead += r;
             }
 
-            // Check for end-of-archive marker (two zero blocks)
+            // Check for end-of-archive (two zero blocks)
             boolean allZero = true;
             for (byte b : header) {
                 if (b != 0) { allZero = false; break; }
             }
             if (allZero) return null;
 
-            // Parse header
-            currentEntry = parseTarHeader(header);
-            remainingBytes = currentEntry.getSize();
-
+            currentEntry = new TarEntry(header);
+            entryRemaining = currentEntry.getSize();
             return currentEntry;
         }
 
         @Override
         public int read() throws IOException {
-            if (remainingBytes <= 0) return -1;
-            int b = is.read();
-            if (b != -1) remainingBytes--;
-            return b;
+            byte[] b = new byte[1];
+            int r = read(b);
+            return r == -1 ? -1 : b[0] & 0xFF;
         }
 
         @Override
         public int read(byte[] b, int off, int len) throws IOException {
-            if (remainingBytes <= 0) return -1;
-            int toRead = (int) Math.min(len, remainingBytes);
-            int read = is.read(b, off, toRead);
-            if (read != -1) remainingBytes -= read;
-            return read;
+            if (entryRemaining <= 0) return -1;
+            int toRead = (int) Math.min(len, entryRemaining);
+            int r = is.read(b, off, toRead);
+            if (r > 0) entryRemaining -= r;
+            return r;
         }
 
-        private void skipPadding() throws IOException {
-            if (currentEntry == null) return;
-            long size = currentEntry.getSize();
-            int padding = (int) (512 - (size % 512)) % 512;
-            while (padding > 0) {
-                long skipped = is.skip(padding);
-                if (skipped <= 0) break;
-                padding -= skipped;
-            }
+        @Override
+        public void close() throws IOException {
+            is.close();
         }
+    }
 
-        private TarEntry parseTarHeader(byte[] header) {
-            // Name: 0-100
-            String name = readString(header, 0, 100);
-            // Mode: 100-108 (octal)
-            long mode = readOctal(header, 100, 8);
-            // Size: 124-136 (octal)
-            long size = readOctal(header, 124, 12);
-            // Type flag: 156
-            byte typeFlag = header[156];
+    private static class TarEntry {
+        private final String name;
+        private final long size;
+        private final int mode;
 
-            boolean isDirectory = (typeFlag == '5') || (typeFlag == 0 && name.endsWith("/"));
-
-            TarEntry entry = new TarEntry(name, isDirectory);
-            entry.setSize(size);
-            entry.setMode(mode);
-
-            return entry;
+        TarEntry(byte[] header) {
+            // Parse POSIX tar header
+            name = readString(header, 0, 100);
+            size = parseOctal(header, 124, 12);
+            mode = (int) parseOctal(header, 100, 8);
         }
 
         private String readString(byte[] header, int offset, int length) {
             int end = offset + length;
-            while (end > offset && (header[end - 1] == 0 || header[end - 1] == ' ')) {
-                end--;
-            }
-            return new String(header, offset, end - offset);
+            while (end > offset && header[end - 1] == 0) end--;
+            return new String(header, offset, end - offset).trim();
         }
 
-        private long readOctal(byte[] header, int offset, int length) {
-            String str = readString(header, offset, length).trim();
-            if (str.isEmpty()) return 0;
+        private long parseOctal(byte[] header, int offset, int length) {
+            String s = readString(header, offset, length);
+            if (s.isEmpty()) return 0;
             try {
-                // Handle both octal and base-256 encoding
+                // Handle base-256 encoding (first byte has high bit set)
                 if ((header[offset] & 0x80) != 0) {
-                    // Base-256 encoding
                     long result = 0;
-                    for (int i = offset + 1; i < offset + length; i++) {
+                    for (int i = offset; i < offset + length; i++) {
                         result = (result << 8) | (header[i] & 0xFF);
                     }
+                    result &= ~(1L << (length * 8 - 1)); // Clear high bit
                     return result;
                 }
-                return Long.parseLong(str, 8);
+                return Long.parseLong(s, 8);
             } catch (NumberFormatException e) {
                 return 0;
             }
         }
-    }
 
-    /**
-     * Simple TarEntry class.
-     */
-    private static class TarEntry {
-        private String name;
-        private boolean directory;
-        private long size;
-        private long mode;
-
-        public TarEntry(String name, boolean directory) {
-            this.name = name;
-            this.directory = directory;
-        }
-
-        public String getName() { return name; }
-        public boolean isDirectory() { return directory; }
-        public long getSize() { return size; }
-        public long getMode() { return mode; }
-
-        public void setSize(long size) { this.size = size; }
-        public void setMode(long mode) { this.mode = mode; }
-    }
-
-    /**
-     * Destroy and clean up resources.
-     */
-    public void destroy() {
-        executor.shutdownNow();
+        String getName() { return name; }
+        long getSize() { return size; }
+        int getMode() { return mode; }
+        boolean isDirectory() { return name.endsWith("/"); }
     }
 }

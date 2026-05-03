@@ -31,7 +31,7 @@
             android:id="@+id/tv_terminal_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="CodeEditor Terminal v1.3.0"
+            android:text="CodeEditor Terminal v1.3.1"
             android:textSize="12sp"
             android:textColor="#6c7293"
             android:fontFamily="monospace" />
@@ -106,6 +106,22 @@
                 android:text="Alpine"
                 android:textSize="10sp"
                 android:textColor="#0D597F"
+                android:fontFamily="monospace"
+                android:background="@drawable/bg_special_key"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:layout_marginStart="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/btn_install_udroid"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:gravity="center"
+                android:text="udroid"
+                android:textSize="10sp"
+                android:textColor="#51cf66"
                 android:fontFamily="monospace"
                 android:background="@drawable/bg_special_key"
                 android:paddingStart="8dp"

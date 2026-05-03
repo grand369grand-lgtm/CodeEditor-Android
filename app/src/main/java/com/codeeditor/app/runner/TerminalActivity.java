@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -36,26 +37,22 @@ import java.io.File;
  *
  * Features:
  * - Interactive shell sessions (Android shell /system/bin/sh)
- * - Full Linux environment via proot (Ubuntu, Debian, Alpine)
+ * - Full Linux environment via proot (Ubuntu, Debian, Alpine, udroid)
  * - Real-time output streaming with ANSI color support
  * - Special keys toolbar (Tab, Ctrl, Esc, arrows, etc.)
  * - Command history navigation
  * - Run code from the editor in the terminal
  * - Linux distribution installation and management
- * - Working directory management
+ * - udroid auto-login support (Ubuntu Jammy with XFCE4)
  * - iOS-style dark theme terminal UI
- *
- * Based on fs-manager-udroid approach for Ubuntu installation on Android.
  */
 public class TerminalActivity extends AppCompatActivity {
 
     private static final String TAG = "TerminalActivity";
 
-    // Session types
     public static final String SESSION_ANDROID = "android";
     public static final String SESSION_LINUX = "linux";
 
-    // Intent extras
     public static final String EXTRA_OUTPUT = "output";
     public static final String EXTRA_LANGUAGE = "language";
     public static final String EXTRA_FILE_NAME = "file_name";
@@ -126,15 +123,10 @@ public class TerminalActivity extends AppCompatActivity {
 
         webView.setWebViewClient(new TerminalWebViewClient());
         webView.setWebChromeClient(new WebChromeClient());
-
         webView.addJavascriptInterface(new TerminalJsInterface(), "AndroidTerminal");
-
         webView.loadUrl("file:///android_asset/terminal/terminal.html");
     }
 
-    /**
-     * Set up the Linux distro control bar.
-     */
     private void setupLinuxBar() {
         findViewById(R.id.btn_install_ubuntu).setOnClickListener(v ->
                 installLinuxDistro(UbuntuManager.DISTRO_UBUNTU));
@@ -145,6 +137,13 @@ public class TerminalActivity extends AppCompatActivity {
         findViewById(R.id.btn_install_alpine).setOnClickListener(v ->
                 installLinuxDistro(UbuntuManager.DISTRO_ALPINE));
 
+        // udroid install button
+        View btnUdroid = findViewById(R.id.btn_install_udroid);
+        if (btnUdroid != null) {
+            btnUdroid.setOnClickListener(v ->
+                    installLinuxDistro(UbuntuManager.DISTRO_UDROID));
+        }
+
         findViewById(R.id.btn_start_linux).setOnClickListener(v ->
                 startLinuxSession());
 
@@ -154,9 +153,6 @@ public class TerminalActivity extends AppCompatActivity {
         updateLinuxBarVisibility();
     }
 
-    /**
-     * Update Linux bar visibility based on installation state.
-     */
     private void updateLinuxBarVisibility() {
         boolean installed = ubuntuManager.isDistroInstalled();
         View installButtons = findViewById(R.id.install_buttons);
@@ -170,9 +166,6 @@ public class TerminalActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Install a Linux distribution with progress dialog.
-     */
     private void installLinuxDistro(String distro) {
         currentDistro = distro;
 
@@ -183,6 +176,9 @@ public class TerminalActivity extends AppCompatActivity {
                 break;
             case UbuntuManager.DISTRO_ALPINE:
                 distroName = "Alpine";
+                break;
+            case UbuntuManager.DISTRO_UDROID:
+                distroName = "udroid (Ubuntu Jammy + XFCE4)";
                 break;
             default:
                 distroName = "Ubuntu";
@@ -196,10 +192,7 @@ public class TerminalActivity extends AppCompatActivity {
         installDialog.setMax(100);
         installDialog.setProgress(0);
         installDialog.setCancelable(false);
-        installDialog.setButton(ProgressDialog.BUTTON_NEGATIVE, "Cancel", (d, w) -> {
-            // Can't really cancel, but dismiss
-            d.dismiss();
-        });
+        installDialog.setButton(ProgressDialog.BUTTON_NEGATIVE, "Cancel", (d, w) -> d.dismiss());
         installDialog.show();
 
         ubuntuManager.installDistroAsync(distro, new UbuntuManager.InstallCallback() {
@@ -223,17 +216,23 @@ public class TerminalActivity extends AppCompatActivity {
                     Toast.makeText(TerminalActivity.this,
                             distroName + " installed successfully!", Toast.LENGTH_LONG).show();
 
-                    // Show distro info
                     UbuntuManager.DistroInfo info = ubuntuManager.getInstalledDistroInfo();
                     if (info != null) {
                         appendOutput("\n\u001b[32m═══════════════════════════════════════\u001b[0m\n");
                         appendOutput("\u001b[32m  " + info.toString() + " installed successfully!\u001b[0m\n");
                         appendOutput("\u001b[32m═══════════════════════════════════════\u001b[0m\n\n");
-                        appendOutput("Tap \"Start Linux\" to begin your Linux session.\n");
-                        appendOutput("You can use apt/apt-get to install packages.\n\n");
+
+                        if (UbuntuManager.DISTRO_UDROID.equals(distro)) {
+                            appendOutput("udroid is ready! Use these commands:\n");
+                            appendOutput("  udroid-setup-desktop  - Install XFCE4 desktop\n");
+                            appendOutput("  udroid-setup-vnc      - Setup VNC server\n");
+                            appendOutput("  update                - apt update && upgrade\n\n");
+                        } else {
+                            appendOutput("Tap \"Start Linux\" to begin your Linux session.\n");
+                            appendOutput("You can use apt/apt-get to install packages.\n\n");
+                        }
                     }
 
-                    // Auto-start Linux session
                     startLinuxSession();
                 });
             }
@@ -246,10 +245,19 @@ public class TerminalActivity extends AppCompatActivity {
                     }
                     appendOutput("\n\u001b[31m[Installation Error]\u001b[0m\n");
                     appendOutput(error + "\n\n");
-                    appendOutput("Tips:\n");
-                    appendOutput("1. Make sure you have internet connection\n");
-                    appendOutput("2. Try installing Termux for proot support\n");
-                    appendOutput("3. Use Alpine for a smaller download\n\n");
+
+                    if (error.contains("404") || error.contains("proot")) {
+                        appendOutput("\u001b[33mProot Download Troubleshooting:\u001b[0m\n");
+                        appendOutput("1. Make sure you have internet connection\n");
+                        appendOutput("2. Install Termux from F-Droid for proot support\n");
+                        appendOutput("3. Try Alpine (smallest download, ~3MB)\n");
+                        appendOutput("4. Restart the app and try again\n\n");
+                    } else {
+                        appendOutput("Tips:\n");
+                        appendOutput("1. Make sure you have internet connection\n");
+                        appendOutput("2. Try installing Termux for proot support\n");
+                        appendOutput("3. Use Alpine for a smaller download\n\n");
+                    }
 
                     new AlertDialog.Builder(TerminalActivity.this)
                             .setTitle("Installation Failed")
@@ -261,9 +269,6 @@ public class TerminalActivity extends AppCompatActivity {
         });
     }
 
-    /**
-     * Start a Linux (proot) session.
-     */
     private void startLinuxSession() {
         if (!ubuntuManager.isDistroInstalled()) {
             Toast.makeText(this, "Please install a Linux distribution first", Toast.LENGTH_SHORT).show();
@@ -291,16 +296,36 @@ public class TerminalActivity extends AppCompatActivity {
         // Show Linux welcome banner
         UbuntuManager.DistroInfo info = ubuntuManager.getInstalledDistroInfo();
         String distroName = info != null ? info.toString() : "Linux";
+        boolean isUdroid = ubuntuManager.isUdroidInstalled();
 
         appendOutput("\u001b[32m╔══════════════════════════════════════════════════╗\u001b[0m\n");
-        appendOutput("\u001b[32m║     CodeEditor Linux Terminal v1.3.0             ║\u001b[0m\n");
-        appendOutput("\u001b[32m║     " + String.format("%-46s", distroName) + "║\u001b[0m\n");
+        if (isUdroid) {
+            appendOutput("\u001b[32m║     udroid CodeEditor Terminal v1.3.1            ║\u001b[0m\n");
+            appendOutput("\u001b[32m║     Ubuntu Jammy (22.04) + XFCE4 Desktop        ║\u001b[0m\n");
+        } else {
+            appendOutput("\u001b[32m║     CodeEditor Linux Terminal v1.3.1             ║\u001b[0m\n");
+            appendOutput("\u001b[32m║     " + String.format("%-46s", distroName) + "║\u001b[0m\n");
+        }
         appendOutput("\u001b[32m╚══════════════════════════════════════════════════╝\u001b[0m\n\n");
-        appendOutput("  Shell: /bin/sh (via proot)\n");
-        appendOutput("  Workspace: /workspace (synced with app)\n");
-        appendOutput("  Network: Available (DNS: 8.8.8.8)\n");
-        appendOutput("  Package Manager: apt / apt-get\n\n");
-        appendOutput("\u001b[33m  Starting proot session...\u001b[0m\n\n");
+
+        if (isUdroid) {
+            appendOutput("  Shell: /bin/bash (via proot)\n");
+            appendOutput("  Distro: Ubuntu 22.04 Jammy (udroid)\n");
+            appendOutput("  Desktop: XFCE4 (install with udroid-setup-desktop)\n");
+            appendOutput("  VNC: Available (setup with udroid-setup-vnc)\n");
+            appendOutput("  Workspace: /workspace (synced with app)\n\n");
+            appendOutput("\u001b[33m  Starting udroid session...\u001b[0m\n\n");
+        } else {
+            appendOutput("  Shell: /bin/sh (via proot)\n");
+            appendOutput("  Workspace: /workspace (synced with app)\n");
+            appendOutput("  Network: Available (DNS: 8.8.8.8)\n");
+            appendOutput("  Package Manager: apt / apt-get\n\n");
+            appendOutput("\u001b[33m  Starting proot session...\u001b[0m\n\n");
+        }
+
+        // Use udroid login command if udroid is installed
+        String[] command = isUdroid ? ubuntuManager.buildUdroidLoginCommand() : ubuntuManager.buildProotCommand(null);
+        String[] environment = ubuntuManager.buildProotEnvironment();
 
         linuxSession = new ProotSession(ubuntuManager, currentDistro, new ProotSession.SessionCallback() {
             @Override
@@ -322,7 +347,6 @@ public class TerminalActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     appendOutput("\n\u001b[31m[Proot Error: " + error + "]\u001b[0m\n");
                     appendOutput("\nFalling back to Android shell...\n\n");
-                    // Fallback to Android shell
                     startAndroidShellSession(currentWorkDir);
                 });
             }
@@ -331,14 +355,10 @@ public class TerminalActivity extends AppCompatActivity {
         linuxSession.start();
         updateSessionInfo(true);
 
-        // Set prompt for Linux
-        String prompt = "root@codeeditor:~# ";
+        String prompt = isUdroid ? "root@udroid:~# " : "root@codeeditor:~# ";
         callJs("setPrompt('" + prompt.replace("'", "\\'") + "')");
     }
 
-    /**
-     * Switch to Android shell session.
-     */
     private void switchToAndroidSession() {
         if (linuxSession != null) {
             linuxSession.destroy();
@@ -349,7 +369,7 @@ public class TerminalActivity extends AppCompatActivity {
         callJs("clearTerminal()");
 
         appendOutput("\u001b[36m╔══════════════════════════════════════════╗\u001b[0m\n");
-        appendOutput("\u001b[36m║     CodeEditor Android Shell v1.3.0     ║\u001b[0m\n");
+        appendOutput("\u001b[36m║     CodeEditor Android Shell v1.3.1     ║\u001b[0m\n");
         appendOutput("\u001b[36m╚══════════════════════════════════════════╝\u001b[0m\n\n");
 
         startAndroidShellSession(currentWorkDir);
@@ -362,45 +382,25 @@ public class TerminalActivity extends AppCompatActivity {
         callJs("setPrompt('" + prompt.replace("'", "\\'") + "')");
     }
 
-    /**
-     * Set up the special keys toolbar.
-     */
     private void setupSpecialKeys() {
-        // ESC
-        findViewById(R.id.btn_esc).setOnClickListener(v ->
-                callJs("sendKey('ESC')"));
+        findViewById(R.id.btn_esc).setOnClickListener(v -> callJs("sendKey('ESC')"));
+        findViewById(R.id.btn_tab).setOnClickListener(v -> callJs("sendKey('TAB')"));
 
-        // Tab
-        findViewById(R.id.btn_tab).setOnClickListener(v ->
-                callJs("sendKey('TAB')"));
-
-        // Ctrl - toggle mode
         btnCtrl.setOnClickListener(v -> {
             ctrlActive = !ctrlActive;
-            btnCtrl.setTextColor(ctrlActive ?
-                    getColor(R.color.ios_blue) : getColor(R.color.terminal_text));
+            btnCtrl.setTextColor(ctrlActive ? getColor(R.color.ios_blue) : getColor(R.color.terminal_text));
             if (ctrlActive) {
                 Toast.makeText(this, "Ctrl mode ON - tap a key", Toast.LENGTH_SHORT).show();
             }
         });
 
-        // Arrow keys
-        findViewById(R.id.btn_arrow_up).setOnClickListener(v ->
-                callJs("sendKey('UP')"));
-        findViewById(R.id.btn_arrow_down).setOnClickListener(v ->
-                callJs("sendKey('DOWN')"));
-        findViewById(R.id.btn_arrow_left).setOnClickListener(v ->
-                callJs("sendKey('LEFT')"));
-        findViewById(R.id.btn_arrow_right).setOnClickListener(v ->
-                callJs("sendKey('RIGHT')"));
+        findViewById(R.id.btn_arrow_up).setOnClickListener(v -> callJs("sendKey('UP')"));
+        findViewById(R.id.btn_arrow_down).setOnClickListener(v -> callJs("sendKey('DOWN')"));
+        findViewById(R.id.btn_arrow_left).setOnClickListener(v -> callJs("sendKey('LEFT')"));
+        findViewById(R.id.btn_arrow_right).setOnClickListener(v -> callJs("sendKey('RIGHT')"));
+        findViewById(R.id.btn_home).setOnClickListener(v -> callJs("sendKey('HOME')"));
+        findViewById(R.id.btn_end).setOnClickListener(v -> callJs("sendKey('END')"));
 
-        // Home / End
-        findViewById(R.id.btn_home).setOnClickListener(v ->
-                callJs("sendKey('HOME')"));
-        findViewById(R.id.btn_end).setOnClickListener(v ->
-                callJs("sendKey('END')"));
-
-        // Pipe
         findViewById(R.id.btn_pipe).setOnClickListener(v -> {
             if (ctrlActive) {
                 sendCtrlChar("\\");
@@ -411,54 +411,19 @@ public class TerminalActivity extends AppCompatActivity {
             }
         });
 
-        // Slash
-        findViewById(R.id.btn_slash).setOnClickListener(v ->
-                callJs("insertText('/')"));
-
-        // Tilde
-        findViewById(R.id.btn_tilde).setOnClickListener(v ->
-                callJs("insertText('~')"));
-
-        // Dollar
-        findViewById(R.id.btn_dollar).setOnClickListener(v ->
-                callJs("insertText('$')"));
-
-        // Ampersand
-        findViewById(R.id.btn_ampersand).setOnClickListener(v ->
-                callJs("insertText('&')"));
-
-        // Semicolon
-        findViewById(R.id.btn_semicolon).setOnClickListener(v ->
-                callJs("insertText(';')"));
-
-        // Exclamation
-        findViewById(R.id.btn_exclamation).setOnClickListener(v ->
-                callJs("insertText('!')"));
-
-        // Less than
-        findViewById(R.id.btn_less).setOnClickListener(v ->
-                callJs("insertText('<')"));
-
-        // Greater than
-        findViewById(R.id.btn_greater).setOnClickListener(v ->
-                callJs("insertText('>')"));
-
-        // Single quote
-        findViewById(R.id.btn_quote).setOnClickListener(v ->
-                callJs("insertText(\"'\")"));
-
-        // Double quote
-        findViewById(R.id.btn_double_quote).setOnClickListener(v ->
-                callJs("insertText('\"')"));
-
-        // Delete
-        findViewById(R.id.btn_del).setOnClickListener(v ->
-                callJs("sendKey('DEL')"));
+        findViewById(R.id.btn_slash).setOnClickListener(v -> callJs("insertText('/')"));
+        findViewById(R.id.btn_tilde).setOnClickListener(v -> callJs("insertText('~')"));
+        findViewById(R.id.btn_dollar).setOnClickListener(v -> callJs("insertText('$')"));
+        findViewById(R.id.btn_ampersand).setOnClickListener(v -> callJs("insertText('&')"));
+        findViewById(R.id.btn_semicolon).setOnClickListener(v -> callJs("insertText(';')"));
+        findViewById(R.id.btn_exclamation).setOnClickListener(v -> callJs("insertText('!')"));
+        findViewById(R.id.btn_less).setOnClickListener(v -> callJs("insertText('<')"));
+        findViewById(R.id.btn_greater).setOnClickListener(v -> callJs("insertText('>')"));
+        findViewById(R.id.btn_quote).setOnClickListener(v -> callJs("insertText(\"'\")"));
+        findViewById(R.id.btn_double_quote).setOnClickListener(v -> callJs("insertText('\"')"));
+        findViewById(R.id.btn_del).setOnClickListener(v -> callJs("sendKey('DEL')"));
     }
 
-    /**
-     * Send a Ctrl+key combination to the active session.
-     */
     private void sendCtrlChar(String key) {
         if (SESSION_LINUX.equals(currentSessionType) && linuxSession != null && linuxSession.isRunning()) {
             switch (key.toLowerCase()) {
@@ -491,43 +456,34 @@ public class TerminalActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Parse intent extras and start the terminal session.
-     */
     private void parseIntentAndStartSession() {
         Intent intent = getIntent();
         if (intent == null) {
-            startAndroidShellSession(null);
+            autoStartSession();
             return;
         }
 
-        // Get session type
         currentSessionType = intent.getStringExtra(EXTRA_SESSION_TYPE);
         if (currentSessionType == null) currentSessionType = SESSION_ANDROID;
 
         currentDistro = intent.getStringExtra(EXTRA_DISTRO);
         if (currentDistro == null) currentDistro = UbuntuManager.DISTRO_UBUNTU;
 
-        // Get working directory
         currentWorkDir = intent.getStringExtra(EXTRA_WORK_DIR);
         if (currentWorkDir == null) {
             currentWorkDir = com.codeeditor.app.CodeEditorApp.getWorkDirectory();
         }
 
-        // Check if opened with static output (backward compatibility)
         String staticOutput = intent.getStringExtra(EXTRA_OUTPUT);
         String code = intent.getStringExtra(EXTRA_CODE);
         boolean runCode = intent.getBooleanExtra(EXTRA_RUN_CODE, false);
 
         if (SESSION_LINUX.equals(currentSessionType) && ubuntuManager.isDistroInstalled()) {
-            // Start Linux session
             startLinuxSession();
         } else {
-            // Start Android shell session
-            startAndroidShellSession(currentWorkDir);
+            autoStartSession();
         }
 
-        // If there's code to execute, run it after a delay
         if (code != null && !code.isEmpty() && runCode) {
             String language = intent.getStringExtra(EXTRA_LANGUAGE);
             mainHandler.postDelayed(() -> executeCodeInTerminal(code, language), 1500);
@@ -546,8 +502,24 @@ public class TerminalActivity extends AppCompatActivity {
     }
 
     /**
-     * Start an Android shell session.
+     * Auto-start the appropriate session based on preferences.
+     * If udroid is installed with auto-login, start Linux session automatically.
      */
+    private void autoStartSession() {
+        if (ubuntuManager.isDistroInstalled() && ubuntuManager.isAutoLoginEnabled()) {
+            // Auto-start Linux session
+            mainHandler.postDelayed(() -> {
+                if (ubuntuManager.isDistroInstalled() && ubuntuManager.isProotAvailable()) {
+                    startLinuxSession();
+                } else {
+                    startAndroidShellSession(currentWorkDir);
+                }
+            }, 500);
+        } else {
+            startAndroidShellSession(currentWorkDir);
+        }
+    }
+
     private void startAndroidShellSession(String workDir) {
         currentSessionType = SESSION_ANDROID;
 
@@ -574,9 +546,7 @@ public class TerminalActivity extends AppCompatActivity {
 
             @Override
             public void onError(String error) {
-                runOnUiThread(() -> {
-                    appendOutput("\n[Error: " + error + "]\n");
-                });
+                runOnUiThread(() -> appendOutput("\n[Error: " + error + "]\n"));
             }
         });
 
@@ -584,9 +554,6 @@ public class TerminalActivity extends AppCompatActivity {
         updateSessionInfo(true);
     }
 
-    /**
-     * Execute code in the terminal.
-     */
     private void executeCodeInTerminal(String code, String language) {
         String workDir = com.codeeditor.app.CodeEditorApp.getWorkDirectory();
         String ext = "txt";
@@ -594,28 +561,11 @@ public class TerminalActivity extends AppCompatActivity {
 
         if (language != null) {
             switch (language.toLowerCase()) {
-                case "python":
-                case "py":
-                    ext = "py";
-                    interpreter = "python3";
-                    break;
-                case "cpp":
-                case "c":
-                    ext = "cpp";
-                    break;
-                case "java":
-                    ext = "java";
-                    break;
-                case "javascript":
-                case "js":
-                    ext = "js";
-                    interpreter = "node";
-                    break;
-                case "sh":
-                case "bash":
-                    ext = "sh";
-                    interpreter = "sh";
-                    break;
+                case "python": case "py": ext = "py"; interpreter = "python3"; break;
+                case "cpp": case "c": ext = "cpp"; break;
+                case "java": ext = "java"; break;
+                case "javascript": case "js": ext = "js"; interpreter = "node"; break;
+                case "sh": case "bash": ext = "sh"; interpreter = "sh"; break;
             }
         }
 
@@ -637,7 +587,6 @@ public class TerminalActivity extends AppCompatActivity {
         if (SESSION_LINUX.equals(currentSessionType) && linuxSession != null && linuxSession.isRunning()) {
             linuxSession.executeCommand(command);
         } else if (androidSession != null && androidSession.isRunning()) {
-            // Android shell - use absolute paths
             if (interpreter != null) {
                 androidSession.executeCommand(interpreter + " " + tempFile);
             } else if ("cpp".equals(ext) || "c".equals(ext)) {
@@ -654,9 +603,6 @@ public class TerminalActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Append output text to the terminal WebView.
-     */
     private void appendOutput(String text) {
         if (text == null) return;
         try {
@@ -682,9 +628,6 @@ public class TerminalActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Update session info display.
-     */
     private void updateSessionInfo(boolean running) {
         if (tvSessionInfo != null) {
             String sessionLabel = SESSION_LINUX.equals(currentSessionType) ? "Linux" : "Shell";
@@ -764,7 +707,7 @@ public class TerminalActivity extends AppCompatActivity {
             super.onPageFinished(view, url);
             String prompt;
             if (SESSION_LINUX.equals(currentSessionType)) {
-                prompt = "root@codeeditor:~# ";
+                prompt = ubuntuManager.isUdroidInstalled() ? "root@udroid:~# " : "root@codeeditor:~# ";
             } else {
                 prompt = "$ ";
                 if (currentWorkDir != null) {
@@ -825,16 +768,24 @@ public class TerminalActivity extends AppCompatActivity {
         return super.onOptionsItemSelected(item);
     }
 
-    /**
-     * Show Linux distribution installation dialog.
-     */
     private void showInstallDialog() {
-        String[] distros = {"Ubuntu 24.04 LTS (Recommended)", "Debian Bookworm", "Alpine 3.20 (Lightweight)"};
-        String[] distroIds = {UbuntuManager.DISTRO_UBUNTU, UbuntuManager.DISTRO_DEBIAN, UbuntuManager.DISTRO_ALPINE};
+        String[] distros = {
+                "udroid (Ubuntu Jammy + XFCE4) - Recommended",
+                "Ubuntu 24.04 LTS",
+                "Debian Bookworm",
+                "Alpine 3.20 (Lightweight)"
+        };
+        String[] distroIds = {
+                UbuntuManager.DISTRO_UDROID,
+                UbuntuManager.DISTRO_UBUNTU,
+                UbuntuManager.DISTRO_DEBIAN,
+                UbuntuManager.DISTRO_ALPINE
+        };
 
         new AlertDialog.Builder(this)
                 .setTitle("Install Linux Distribution")
-                .setMessage("Select a Linux distribution to install. This will download the root filesystem (~30-80MB) and set up a proot environment.\n\n" +
+                .setMessage("Select a Linux distribution to install.\n\n" +
+                        "udroid includes Ubuntu 22.04 with XFCE4 desktop support and VNC.\n" +
                         "Alpine is recommended for low-storage devices (~3MB download).")
                 .setItems(distros, (dialog, which) -> {
                     if (ubuntuManager.isDistroInstalled()) {
@@ -855,9 +806,6 @@ public class TerminalActivity extends AppCompatActivity {
                 .show();
     }
 
-    /**
-     * Show uninstall confirmation dialog.
-     */
     private void showUninstallDialog() {
         UbuntuManager.DistroInfo info = ubuntuManager.getInstalledDistroInfo();
         String name = info != null ? info.toString() : "Linux";
@@ -880,9 +828,6 @@ public class TerminalActivity extends AppCompatActivity {
                 .show();
     }
 
-    /**
-     * Restart the current session.
-     */
     private void restartSession() {
         if (SESSION_LINUX.equals(currentSessionType)) {
             if (linuxSession != null) {
@@ -903,9 +848,6 @@ public class TerminalActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Show dialog to run a file in the terminal.
-     */
     private void showRunFileDialog() {
         String workDir = com.codeeditor.app.CodeEditorApp.getWorkDirectory();
         File dir = new File(workDir);
@@ -957,9 +899,6 @@ public class TerminalActivity extends AppCompatActivity {
                 .show();
     }
 
-    /**
-     * Paste text from clipboard into the terminal.
-     */
     private void pasteFromClipboard() {
         android.content.ClipboardManager clipboard =
                 (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
@@ -978,9 +917,6 @@ public class TerminalActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * Copy terminal output to clipboard.
-     */
     private void copyTerminalOutput() {
         webView.evaluateJavascript("document.getElementById('terminal-output').innerText", value -> {
             if (value != null && !"null".equals(value)) {
@@ -1043,7 +979,9 @@ public class TerminalActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        callJs("focusTerminal()");
-        updateLinuxBarVisibility();
+        // Re-focus terminal
+        if (webView != null) {
+            callJs("focusTerminal()");
+        }
     }
 }

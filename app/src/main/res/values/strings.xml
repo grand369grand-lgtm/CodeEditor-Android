@@ -106,6 +106,9 @@
     <string name="install_ubuntu">Install Ubuntu</string>
     <string name="install_debian">Install Debian</string>
     <string name="install_alpine">Install Alpine</string>
+    <string name="install_udroid">Install udroid (Ubuntu Jammy + XFCE4)</string>
+    <string name="udroid_installed">udroid installed successfully!</string>
+    <string name="udroid_auto_login">Auto-login to Linux on terminal open</string>
     <string name="linux_session_active">Linux Active</string>
     <string name="shell_session_active">Shell Active</string>
 
