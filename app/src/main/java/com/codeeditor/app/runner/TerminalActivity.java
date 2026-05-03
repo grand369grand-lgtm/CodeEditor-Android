@@ -152,7 +152,7 @@ public class TerminalActivity extends AppCompatActivity {
         findViewById(R.id.btn_pipe).setOnClickListener(v -> {
             if (ctrlActive) {
                 // Ctrl+\ = send SIGQUIT
-                sendCtrlChar('\\');
+                sendCtrlChar("\\");
                 ctrlActive = false;
                 btnCtrl.setTextColor(getColor(R.color.terminal_text));
             } else {
@@ -377,20 +377,23 @@ public class TerminalActivity extends AppCompatActivity {
      */
     private void appendOutput(String text) {
         if (text == null) return;
-        // Escape the text for JavaScript string
-        String escaped = text
-                .replace("\\", "\\\\")
-                .replace("'", "\\'")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-
-        // We need to use the raw text for ANSI support
-        // Instead of escaping, use a different approach
-        callJs("appendTerminalOutput(decodeURIComponent('" +
-                java.net.URLEncoder.encode(text, "UTF-8").replace("+", "%20")
-                        .replace("'", "\\'") + "'))");
+        try {
+            // Use URL encoding to safely pass text with ANSI codes to JavaScript
+            String encoded = java.net.URLEncoder.encode(text, "UTF-8")
+                    .replace("+", "%20")
+                    .replace("'", "%27");
+            callJs("appendTerminalOutput(decodeURIComponent('" + encoded + "'))");
+        } catch (java.io.UnsupportedEncodingException e) {
+            // Fallback: simple escape approach (no ANSI support)
+            String escaped = text
+                    .replace("\\", "\\\\")
+                    .replace("'", "\\'")
+                    .replace("\"", "\\\"")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t");
+            callJs("appendTerminalOutput('" + escaped + "')");
+        }
     }
 
     /**
