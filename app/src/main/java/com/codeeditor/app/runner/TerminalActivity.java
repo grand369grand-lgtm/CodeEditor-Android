@@ -144,11 +144,14 @@ public class TerminalActivity extends AppCompatActivity {
         findViewById(R.id.btn_tab).setOnClickListener(v -> sendSpecialKey("TAB"));
 
         // CTRL toggle
-        TextView btnCtrl = findViewById(R.id.btn_ctrl);
-        btnCtrl.setOnClickListener(v -> {
-            ctrlActive = !ctrlActive;
-            btnCtrl.setTextColor(ctrlActive ? 0xFF51cf66 : 0xFF8892b0);
-        });
+        View btnCtrlView = findViewById(R.id.btn_ctrl);
+        if (btnCtrlView instanceof TextView) {
+            TextView btnCtrl = (TextView) btnCtrlView;
+            btnCtrl.setOnClickListener(v -> {
+                ctrlActive = !ctrlActive;
+                btnCtrl.setTextColor(ctrlActive ? 0xFF51cf66 : 0xFF8892b0);
+            });
+        }
 
         // Arrow keys
         findViewById(R.id.btn_arrow_up).setOnClickListener(v -> sendArrowKey(0));
@@ -571,7 +574,8 @@ public class TerminalActivity extends AppCompatActivity {
     private void sendText(String text) {
         if (ctrlActive) {
             ctrlActive = false;
-            findViewById(R.id.btn_ctrl).setTextColor(0xFF8892b0);
+            View ctrlBtn = findViewById(R.id.btn_ctrl);
+            if (ctrlBtn instanceof TextView) ((TextView) ctrlBtn).setTextColor(0xFF8892b0);
             sendCtrlChar(text);
             return;
         }
