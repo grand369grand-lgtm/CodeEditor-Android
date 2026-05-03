@@ -13,7 +13,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.LinearLayout;
+import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -44,7 +45,7 @@ public class EditorActivity extends AppCompatActivity {
 
     private WebView webView;
     private ProgressBar progressBar;
-    private LinearLayout toolbarExtension;
+    private HorizontalScrollView toolbarExtension;
     private TextView tvFileName;
     private TextView tvLanguage;
 
@@ -63,9 +64,17 @@ public class EditorActivity extends AppCompatActivity {
         setContentView(R.layout.activity_editor);
 
         prefManager = new PreferenceManager(this);
-        nativeRunner = new NativeRunner(this);
+
+        // Initialize native runner safely
+        try {
+            nativeRunner = new NativeRunner(this);
+        } catch (UnsatisfiedLinkError e) {
+            nativeRunner = null;
+            android.util.Log.w("EditorActivity", "Native library not available", e);
+        }
 
         initViews();
+        setupToolbarButtons();
         parseIntent();
         setupWebView();
         setupToolbar();
@@ -77,6 +86,32 @@ public class EditorActivity extends AppCompatActivity {
         toolbarExtension = findViewById(R.id.toolbar_extension);
         tvFileName = findViewById(R.id.tv_file_name);
         tvLanguage = findViewById(R.id.tv_language);
+    }
+
+    /**
+     * Set up click listeners for the toolbar extension buttons.
+     */
+    private void setupToolbarButtons() {
+        ImageView btnUndo = findViewById(R.id.btn_undo);
+        ImageView btnRedo = findViewById(R.id.btn_redo);
+        ImageView btnFind = findViewById(R.id.btn_find);
+        ImageView btnReplace = findViewById(R.id.btn_replace);
+        ImageView btnGotoLine = findViewById(R.id.btn_goto_line);
+        ImageView btnFormat = findViewById(R.id.btn_format);
+        ImageView btnRun = findViewById(R.id.btn_run);
+
+        if (btnUndo != null) btnUndo.setOnClickListener(v ->
+                webView.evaluateJavascript("if(editor) editor.trigger('keyboard','undo');", null));
+        if (btnRedo != null) btnRedo.setOnClickListener(v ->
+                webView.evaluateJavascript("if(editor) editor.trigger('keyboard','redo');", null));
+        if (btnFind != null) btnFind.setOnClickListener(v ->
+                webView.evaluateJavascript("if(editor) editor.getAction('actions.find').run();", null));
+        if (btnReplace != null) btnReplace.setOnClickListener(v ->
+                webView.evaluateJavascript("if(editor) editor.getAction('editor.action.startFindReplaceAction').run();", null));
+        if (btnGotoLine != null) btnGotoLine.setOnClickListener(v -> showGotoLineDialog());
+        if (btnFormat != null) btnFormat.setOnClickListener(v ->
+                webView.evaluateJavascript("if(editor) editor.getAction('editor.action.formatDocument').run();", null));
+        if (btnRun != null) btnRun.setOnClickListener(v -> runCode());
     }
 
     private void parseIntent() {
@@ -279,7 +314,14 @@ public class EditorActivity extends AppCompatActivity {
                 fileContent = content;
 
                 // Execute code using native C++ runner
-                String result = nativeRunner.executeCode(currentLanguage, fileContent, filePath);
+                String result;
+                if (nativeRunner != null) {
+                    result = nativeRunner.executeCode(currentLanguage, fileContent, filePath);
+                } else {
+                    result = "Native runner not available.\n" +
+                            "The native library could not be loaded.\n" +
+                            "Code execution requires the C++ native library.";
+                }
 
                 // Open terminal to show results
                 Intent intent = new Intent(EditorActivity.this, TerminalActivity.class);
@@ -295,6 +337,13 @@ public class EditorActivity extends AppCompatActivity {
     // ===== JavaScript Interface for Monaco → Java communication =====
 
     private class EditorJsInterface {
+        @android.webkit.JavascriptInterface
+        public void onEditorReady() {
+            runOnUiThread(() -> {
+                // Editor is ready, content will be loaded via loadCodeIntoEditor
+            });
+        }
+
         @android.webkit.JavascriptInterface
         public void onContentChanged() {
             runOnUiThread(() -> {
@@ -353,19 +402,19 @@ public class EditorActivity extends AppCompatActivity {
             runCode();
             return true;
         } else if (id == R.id.action_undo) {
-            webView.evaluateJavascript("editor.trigger('keyboard','undo');", null);
+            webView.evaluateJavascript("if(editor) editor.trigger('keyboard','undo');", null);
             return true;
         } else if (id == R.id.action_redo) {
-            webView.evaluateJavascript("editor.trigger('keyboard','redo');", null);
+            webView.evaluateJavascript("if(editor) editor.trigger('keyboard','redo');", null);
             return true;
         } else if (id == R.id.action_find) {
-            webView.evaluateJavascript("editor.getAction('actions.find').run();", null);
+            webView.evaluateJavascript("if(editor) editor.getAction('actions.find').run();", null);
             return true;
         } else if (id == R.id.action_replace) {
-            webView.evaluateJavascript("editor.getAction('editor.action.startFindReplaceAction').run();", null);
+            webView.evaluateJavascript("if(editor) editor.getAction('editor.action.startFindReplaceAction').run();", null);
             return true;
         } else if (id == R.id.action_format) {
-            webView.evaluateJavascript("editor.getAction('editor.action.formatDocument').run();", null);
+            webView.evaluateJavascript("if(editor) editor.getAction('editor.action.formatDocument').run();", null);
             return true;
         } else if (id == R.id.action_goto_line) {
             showGotoLineDialog();
