@@ -23,8 +23,11 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.net.Uri;
+
 import com.codeeditor.app.R;
 import com.codeeditor.app.filemanager.FileManagerActivity;
+import com.codeeditor.app.filemanager.SafHelper;
 import com.codeeditor.app.runner.NativeRunner;
 import com.codeeditor.app.runner.TerminalActivity;
 import com.codeeditor.app.utils.FileUtils;
@@ -56,6 +59,11 @@ public class EditorActivity extends AppCompatActivity {
     private boolean isModified = false;
     private PreferenceManager prefManager;
     private NativeRunner nativeRunner;
+
+    // SAF support
+    private Uri safUri;             // SAF content URI for the file
+    private Uri safTreeUri;        // SAF tree URI for the parent directory
+    private boolean isSafFile = false;  // true if file opened via SAF
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -119,9 +127,27 @@ public class EditorActivity extends AppCompatActivity {
         if (intent != null) {
             filePath = intent.getStringExtra(EXTRA_FILE_PATH);
             isNewFile = intent.getBooleanExtra(EXTRA_NEW_FILE, false);
+
+            // Check for SAF file
+            isSafFile = intent.getBooleanExtra("is_saf", false);
+            String safUriStr = intent.getStringExtra("saf_uri");
+            String safTreeUriStr = intent.getStringExtra("saf_tree_uri");
+            if (safUriStr != null) {
+                safUri = Uri.parse(safUriStr);
+            }
+            if (safTreeUriStr != null) {
+                safTreeUri = Uri.parse(safTreeUriStr);
+            }
         }
 
-        if (filePath != null) {
+        if (isSafFile && safUri != null) {
+            // SAF file - read via content resolver
+            String fileName = filePath != null ? new File(filePath).getName() : "SAF File";
+            tvFileName.setText(fileName);
+            currentLanguage = LanguageDetector.detectLanguage(fileName);
+            tvLanguage.setText(currentLanguage.toUpperCase());
+            fileContent = SafHelper.readSafFile(this, safUri);
+        } else if (filePath != null) {
             File file = new File(filePath);
             tvFileName.setText(file.getName());
             currentLanguage = LanguageDetector.detectLanguage(file.getName());
@@ -239,14 +265,24 @@ public class EditorActivity extends AppCompatActivity {
 
                 fileContent = content;
 
-                if (filePath != null) {
+                if (isSafFile && safUri != null) {
+                    // Save via SAF
+                    boolean saved = SafHelper.writeSafFile(EditorActivity.this, safUri, content);
+                    if (saved) {
+                        isModified = false;
+                        invalidateOptionsMenu();
+                        Toast.makeText(EditorActivity.this, R.string.file_saved, Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(EditorActivity.this, R.string.file_save_failed, Toast.LENGTH_SHORT).show();
+                    }
+                } else if (filePath != null) {
                     boolean saved = FileUtils.writeFile(filePath, content);
                     if (saved) {
                         isModified = false;
                         invalidateOptionsMenu();
-                        Toast.makeText(this, R.string.file_saved, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(EditorActivity.this, R.string.file_saved, Toast.LENGTH_SHORT).show();
                     } else {
-                        Toast.makeText(this, R.string.file_save_failed, Toast.LENGTH_SHORT).show();
+                        Toast.makeText(EditorActivity.this, R.string.file_save_failed, Toast.LENGTH_SHORT).show();
                     }
                 } else {
                     // New file - prompt for save location

@@ -45,6 +45,30 @@
     <string name="delete_failed">Failed to delete</string>
     <string name="empty_folder">This folder is empty</string>
 
+    <!-- File Manager - Long Press Actions -->
+    <string name="edit_in_editor">Edit in Editor</string>
+    <string name="open_folder">Open Folder</string>
+    <string name="select_this_folder">Select This Folder</string>
+    <string name="properties">Properties</string>
+    <string name="file_name_prop">Name:</string>
+    <string name="file_path_prop">Path:</string>
+    <string name="file_size_prop">Size:</string>
+    <string name="file_type_prop">Type:</string>
+    <string name="folder_type">Folder</string>
+    <string name="unknown_type">Unknown</string>
+    <string name="access_method">Access:</string>
+    <string name="direct_access">Direct</string>
+    <string name="uri_prop">URI:</string>
+
+    <!-- SAF / Android Data Access -->
+    <string name="android_data_access">Android/data Access</string>
+    <string name="select_android_data_hint">Select the Android/data folder to grant access</string>
+    <string name="saf_access_granted">SAF access granted</string>
+    <string name="saf_access_denied">SAF access denied</string>
+    <string name="saf_mode">SAF Mode</string>
+    <string name="open_with_saf">Open with SAF</string>
+    <string name="restricted_folder">This folder requires SAF access</string>
+
     <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="editor_settings">Editor Settings</string>

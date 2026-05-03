@@ -36,6 +36,21 @@
             android:fontFamily="sans-serif-medium"
             android:maxLines="1"
             android:ellipsize="start" />
+
+        <!-- SAF indicator -->
+        <TextView
+            android:id="@+id/tv_saf_indicator"
+            android:layout_width="wrap_content"
+            android:layout_height="20dp"
+            android:gravity="center"
+            android:text="SAF"
+            android:textSize="10sp"
+            android:textColor="@color/background_primary"
+            android:fontFamily="sans-serif-bold"
+            android:background="@drawable/bg_language_badge"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <!-- Separator -->
@@ -44,19 +59,25 @@
         android:layout_height="0.5dp"
         android:background="@color/separator" />
 
-    <!-- File list -->
+    <!-- File list with swipe refresh -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/rv_files"
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/swipe_refresh"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp" />
+            android:layout_height="match_parent">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_files"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp" />
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
         <!-- Empty state -->
         <TextView

@@ -15,6 +15,11 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/action_android_data"
+        android:title="@string/android_data_access"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_home"
         android:title="@string/action_home"
         app:showAsAction="never" />

@@ -21,20 +21,28 @@ import java.util.Locale;
 /**
  * RecyclerView Adapter for file list.
  * iOS-style file item design with icon, name, details, and action buttons.
+ * Supports both single click and long-press callbacks.
  */
 public class FileListAdapter extends RecyclerView.Adapter<FileListAdapter.FileViewHolder> {
 
     private List<FileItem> items;
-    private OnFileClickListener listener;
+    private OnFileClickListener clickListener;
+    private OnFileLongClickListener longClickListener;
     private SimpleDateFormat dateFormat = new SimpleDateFormat("MMM dd, yyyy", Locale.getDefault());
 
     public interface OnFileClickListener {
         void onFileClick(FileItem item);
     }
 
-    public FileListAdapter(List<FileItem> items, OnFileClickListener listener) {
+    public interface OnFileLongClickListener {
+        void onFileLongClick(FileItem item);
+    }
+
+    public FileListAdapter(List<FileItem> items, OnFileClickListener clickListener,
+                           OnFileLongClickListener longClickListener) {
         this.items = items != null ? items : new ArrayList<>();
-        this.listener = listener;
+        this.clickListener = clickListener;
+        this.longClickListener = longClickListener;
     }
 
     @NonNull
@@ -61,6 +69,11 @@ public class FileListAdapter extends RecyclerView.Adapter<FileListAdapter.FileVi
         }
         holder.tvFileDetails.setText(details);
 
+        // Show SAF indicator for files accessed via SAF
+        if (item.isSaf()) {
+            holder.tvFileDetails.setText(details + " · SAF");
+        }
+
         // Set file extension badge
         String ext = item.getExtension();
         if (!ext.isEmpty() && !item.isDirectory()) {
@@ -73,52 +86,20 @@ public class FileListAdapter extends RecyclerView.Adapter<FileListAdapter.FileVi
             }
         }
 
-        // Click on the entire item opens file/folder
+        // Single click opens file/folder
         holder.itemContainer.setOnClickListener(v -> {
-            if (listener != null) {
-                listener.onFileClick(item);
+            if (clickListener != null) {
+                clickListener.onFileClick(item);
             }
         });
 
-        // Long press to show context actions (rename, delete)
+        // Long press shows context menu
         holder.itemContainer.setOnLongClickListener(v -> {
-            showContextMenu(holder, item);
+            if (longClickListener != null) {
+                longClickListener.onFileLongClick(item);
+            }
             return true;
         });
-    }
-
-    private void showContextMenu(FileViewHolder holder, FileItem item) {
-        // Delegate to activity via callback
-        if (holder.itemView.getContext() instanceof FileManagerActivity) {
-            FileManagerActivity activity = (FileManagerActivity) holder.itemView.getContext();
-
-            String[] options;
-            if (item.isDirectory()) {
-                options = new String[]{
-                        activity.getString(R.string.rename),
-                        activity.getString(R.string.delete)
-                };
-            } else {
-                options = new String[]{
-                        activity.getString(R.string.rename),
-                        activity.getString(R.string.delete)
-                };
-            }
-
-            new android.app.AlertDialog.Builder(activity)
-                    .setTitle(item.getName())
-                    .setItems(options, (dialog, which) -> {
-                        switch (which) {
-                            case 0:
-                                activity.showRenameDialog(item);
-                                break;
-                            case 1:
-                                activity.showDeleteDialog(item);
-                                break;
-                        }
-                    })
-                    .show();
-        }
     }
 
     @Override

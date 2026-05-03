@@ -1,15 +1,25 @@
 package com.codeeditor.app.filemanager;
 
+import android.net.Uri;
+
 /**
  * Model class representing a file or folder item.
+ * Supports both java.io.File paths and SAF content:// URIs.
  */
 public class FileItem {
 
     private String name;
-    private String path;
+    private String path;          // java.io.File path (for direct file access)
+    private Uri uri;              // SAF content:// URI (for Android/data etc.)
+    private Uri treeUri;          // Tree URI for SAF-based directories
+    private String documentId;    // DocumentsContract document ID for SAF items
     private boolean isDirectory;
+    private boolean isSaf;        // true if accessed via Storage Access Framework
     private long size;
     private long lastModified;
+    private boolean canWrite;
+    private boolean canDelete;
+    private boolean canRename;
 
     public FileItem() {}
 
@@ -19,22 +29,48 @@ public class FileItem {
         this.isDirectory = isDirectory;
         this.size = size;
         this.lastModified = lastModified;
+        this.isSaf = false;
+        this.canWrite = true;
+        this.canDelete = true;
+        this.canRename = true;
     }
 
+    // Getters and Setters
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
 
     public String getPath() { return path; }
     public void setPath(String path) { this.path = path; }
 
+    public Uri getUri() { return uri; }
+    public void setUri(Uri uri) { this.uri = uri; }
+
+    public Uri getTreeUri() { return treeUri; }
+    public void setTreeUri(Uri treeUri) { this.treeUri = treeUri; }
+
+    public String getDocumentId() { return documentId; }
+    public void setDocumentId(String documentId) { this.documentId = documentId; }
+
     public boolean isDirectory() { return isDirectory; }
     public void setDirectory(boolean directory) { isDirectory = directory; }
+
+    public boolean isSaf() { return isSaf; }
+    public void setSaf(boolean saf) { isSaf = saf; }
 
     public long getSize() { return size; }
     public void setSize(long size) { this.size = size; }
 
     public long getLastModified() { return lastModified; }
     public void setLastModified(long lastModified) { this.lastModified = lastModified; }
+
+    public boolean canWrite() { return canWrite; }
+    public void setCanWrite(boolean canWrite) { this.canWrite = canWrite; }
+
+    public boolean canDelete() { return canDelete; }
+    public void setCanDelete(boolean canDelete) { this.canDelete = canDelete; }
+
+    public boolean canRename() { return canRename; }
+    public void setCanRename(boolean canRename) { this.canRename = canRename; }
 
     /**
      * Get the file extension from the name.
