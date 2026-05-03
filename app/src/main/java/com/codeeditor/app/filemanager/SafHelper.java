@@ -152,7 +152,7 @@ public class SafHelper {
      * Try to resolve a file path from a document ID and display name.
      * This is a best-effort mapping for compatibility with code that uses file paths.
      */
-    private static String tryResolveFilePath(String documentId, String displayName) {
+    public static String tryResolveFilePath(String documentId, String displayName) {
         if (documentId == null) return null;
         // Document IDs from ExternalStorageProvider typically look like:
         // "primary:Android/data/com.example/files/something.txt"

@@ -132,6 +132,11 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     openEditor(item.getPath());
                 }
+            }, item -> {
+                // Long press on recent file - open in editor
+                if (!item.isDirectory()) {
+                    openEditor(item.getPath());
+                }
             });
             rvRecentFiles.setAdapter(adapter);
         }
