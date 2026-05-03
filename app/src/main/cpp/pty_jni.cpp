@@ -23,10 +23,6 @@
 #include <termios.h>
 #include <signal.h>
 
-#ifdef __ANDROID__
-#include <linux/ptmx.h>
-#endif
-
 #define TAG "PTY-JNI"
 
 /**
