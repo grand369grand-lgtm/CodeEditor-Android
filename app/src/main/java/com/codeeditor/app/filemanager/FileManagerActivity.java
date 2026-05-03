@@ -730,12 +730,6 @@ public class FileManagerActivity extends AppCompatActivity {
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         getMenuInflater().inflate(R.menu.menu_file_manager, menu);
-
-        // Add Android/data access option
-        menu.add(Menu.NONE, R.id.action_android_data, Menu.NONE, R.string.android_data_access)
-                .setIcon(R.drawable.ic_folder)
-                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-
         return true;
     }
 
