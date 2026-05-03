@@ -104,6 +104,14 @@ public class UbuntuManager {
         void onError(String error);
     }
 
+    /**
+     * Simple progress callback (functional interface for lambdas).
+     */
+    @FunctionalInterface
+    public interface ProgressCallback {
+        void onProgress(int progress, String message);
+    }
+
     public UbuntuManager(Context context) {
         this.context = context.getApplicationContext();
         this.linuxDir = new File(context.getFilesDir(), "linux");
@@ -499,7 +507,7 @@ public class UbuntuManager {
         }
     }
 
-    private File downloadRootfs(String distro, InstallCallback progressCallback) throws IOException {
+    private File downloadRootfs(String distro, ProgressCallback progressCallback) throws IOException {
         String rootfsUrl = getRootfsUrl(distro);
         String extension = rootfsUrl.endsWith(".tar.xz") ? ".tar.xz" :
                           rootfsUrl.endsWith(".tar.gz") ? ".tar.gz" :
@@ -521,7 +529,7 @@ public class UbuntuManager {
         return rootfsArchive;
     }
 
-    private void extractRootfs(File archive, InstallCallback progressCallback) throws IOException {
+    private void extractRootfs(File archive, ProgressCallback progressCallback) throws IOException {
         String name = archive.getName();
         Log.d(TAG, "Extracting rootfs: " + name);
 
@@ -547,7 +555,7 @@ public class UbuntuManager {
         }
     }
 
-    private void extractTarGz(File archive, File destDir, InstallCallback progressCallback) throws IOException {
+    private void extractTarGz(File archive, File destDir, ProgressCallback progressCallback) throws IOException {
         try (FileInputStream fis = new FileInputStream(archive);
              GZIPInputStream gis = new GZIPInputStream(fis);
              TarInputStream tis = new TarInputStream(gis)) {
@@ -594,7 +602,7 @@ public class UbuntuManager {
         }
     }
 
-    private void extractTarXz(File archive, File destDir, InstallCallback progressCallback) throws IOException {
+    private void extractTarXz(File archive, File destDir, ProgressCallback progressCallback) throws IOException {
         // For .tar.xz files, use system tar command since Java doesn't have built-in XZ support
         // Try using the system's tar command
         try {
@@ -627,7 +635,7 @@ public class UbuntuManager {
         }
     }
 
-    private void extractTar(File archive, File destDir, InstallCallback progressCallback) throws IOException {
+    private void extractTar(File archive, File destDir, ProgressCallback progressCallback) throws IOException {
         try (FileInputStream fis = new FileInputStream(archive);
              TarInputStream tis = new TarInputStream(fis)) {
 
@@ -863,7 +871,7 @@ public class UbuntuManager {
     }
 
     private void downloadFileWithProgress(String urlStr, File destFile,
-                                           InstallCallback progressCallback) throws IOException {
+                                           ProgressCallback progressCallback) throws IOException {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setConnectTimeout(60000);
@@ -995,6 +1003,12 @@ public class UbuntuManager {
     // =====================================================================
 
     private void notifyProgress(InstallCallback callback, int progress, String message) {
+        if (callback != null) {
+            mainHandler.post(() -> callback.onProgress(progress, message));
+        }
+    }
+
+    private void notifyProgress(ProgressCallback callback, int progress, String message) {
         if (callback != null) {
             mainHandler.post(() -> callback.onProgress(progress, message));
         }
