@@ -16,13 +16,10 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.zip.GZIPInputStream;
-import java.util.zip.TarEntry;
-import java.util.zip.TarInputStream;
 
 /**
  * UbuntuManager - Manages Ubuntu/Debian Linux distribution installation
