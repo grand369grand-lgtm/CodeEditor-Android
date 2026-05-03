@@ -36,6 +36,8 @@
         <!-- Quick Actions - iOS-style card grid -->
         <TextView
             style="@style/iOSSectionHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:text="Quick Actions" />
 
         <LinearLayout
@@ -195,6 +197,8 @@
         <!-- Recent Files Section -->
         <TextView
             style="@style/iOSSectionHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:text="Recent Files" />
 
         <TextView
