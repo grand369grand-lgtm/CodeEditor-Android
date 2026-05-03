@@ -2,11 +2,9 @@ package com.codeeditor.app.runner;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
-import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -523,7 +521,7 @@ public class TerminalActivity extends AppCompatActivity {
             session.destroy();
         }
         callJs("clearTerminal()");
-        appendOutput("\x1b[33m[Starting new shell session...]\x1b[0m\n\n");
+        appendOutput("\u001b[33m[Starting new shell session...]\u001b[0m\n\n");
         startShellSession(currentWorkDir);
     }
 
