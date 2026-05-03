@@ -3,56 +3,197 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@color/terminal_bg">
+    android:background="#1a1a2e">
 
-    <!-- Terminal header -->
+    <!-- Terminal header bar -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
+        android:layout_height="36dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#2D2D2D"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp">
+        android:background="#16213e"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
 
+        <!-- Session indicator -->
         <TextView
-            android:id="@+id/tv_terminal_title"
+            android:id="@+id/tv_session_info"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Terminal"
-            android:textSize="14sp"
-            android:textColor="@color/terminal_text_secondary"
+            android:text="● Shell Active"
+            android:textSize="11sp"
+            android:textColor="@color/ios_green"
             android:fontFamily="monospace" />
 
-        <!-- Status indicator -->
-        <View
-            android:layout_width="8dp"
-            android:layout_height="8dp"
-            android:background="@drawable/bg_status_dot" />
+        <!-- Terminal title -->
+        <TextView
+            android:id="@+id/tv_terminal_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CodeEditor Terminal"
+            android:textSize="12sp"
+            android:textColor="#6c7293"
+            android:fontFamily="monospace" />
     </LinearLayout>
 
     <!-- Separator -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#3D3D3D" />
+        android:layout_height="0.5dp"
+        android:background="#2a2a4a" />
 
-    <!-- Terminal output -->
-    <ScrollView
-        android:id="@+id/scroll_output"
+    <!-- Terminal WebView -->
+    <WebView
+        android:id="@+id/webview_terminal"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:padding="12dp"
-        android:scrollbars="vertical"
-        android:fadeScrollbars="true">
+        android:background="#1a1a2e" />
 
-        <TextView
-            android:id="@+id/tv_output"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            style="@style/TerminalText" />
-    </ScrollView>
+    <!-- Separator -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:background="#2a2a4a" />
+
+    <!-- Special Keys Toolbar - Termux-style -->
+    <HorizontalScrollView
+        android:id="@+id/special_keys_bar"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:background="#0f3460"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp">
+
+            <!-- ESC -->
+            <TextView
+                android:id="@+id/btn_esc"
+                style="@style/SpecialKeyButton"
+                android:text="ESC" />
+
+            <!-- Tab -->
+            <TextView
+                android:id="@+id/btn_tab"
+                style="@style/SpecialKeyButton"
+                android:text="TAB" />
+
+            <!-- Ctrl -->
+            <TextView
+                android:id="@+id/btn_ctrl"
+                style="@style/SpecialKeyButton"
+                android:text="CTRL" />
+
+            <!-- Arrow keys group -->
+            <TextView
+                android:id="@+id/btn_arrow_up"
+                style="@style/SpecialKeyButton"
+                android:text="↑" />
+
+            <TextView
+                android:id="@+id/btn_arrow_down"
+                style="@style/SpecialKeyButton"
+                android:text="↓" />
+
+            <TextView
+                android:id="@+id/btn_arrow_left"
+                style="@style/SpecialKeyButton"
+                android:text="←" />
+
+            <TextView
+                android:id="@+id/btn_arrow_right"
+                style="@style/SpecialKeyButton"
+                android:text="→" />
+
+            <!-- Home / End -->
+            <TextView
+                android:id="@+id/btn_home"
+                style="@style/SpecialKeyButton"
+                android:text="HOME" />
+
+            <TextView
+                android:id="@+id/btn_end"
+                style="@style/SpecialKeyButton"
+                android:text="END" />
+
+            <!-- DEL -->
+            <TextView
+                android:id="@+id/btn_del"
+                style="@style/SpecialKeyButton"
+                android:text="DEL" />
+
+            <!-- Separator -->
+            <View
+                android:layout_width="1dp"
+                android:layout_height="20dp"
+                android:background="#2a2a4a"
+                android:layout_marginStart="4dp"
+                android:layout_marginEnd="4dp" />
+
+            <!-- Symbols -->
+            <TextView
+                android:id="@+id/btn_pipe"
+                style="@style/SpecialKeyButton"
+                android:text="|" />
+
+            <TextView
+                android:id="@+id/btn_slash"
+                style="@style/SpecialKeyButton"
+                android:text="/" />
+
+            <TextView
+                android:id="@+id/btn_tilde"
+                style="@style/SpecialKeyButton"
+                android:text="~" />
+
+            <TextView
+                android:id="@+id/btn_dollar"
+                style="@style/SpecialKeyButton"
+                android:text="$" />
+
+            <TextView
+                android:id="@+id/btn_ampersand"
+                style="@style/SpecialKeyButton"
+                android:text="&amp;" />
+
+            <TextView
+                android:id="@+id/btn_semicolon"
+                style="@style/SpecialKeyButton"
+                android:text=";" />
+
+            <TextView
+                android:id="@+id/btn_exclamation"
+                style="@style/SpecialKeyButton"
+                android:text="!" />
+
+            <TextView
+                android:id="@+id/btn_less"
+                style="@style/SpecialKeyButton"
+                android:text="&lt;" />
+
+            <TextView
+                android:id="@+id/btn_greater"
+                style="@style/SpecialKeyButton"
+                android:text="&gt;" />
+
+            <TextView
+                android:id="@+id/btn_quote"
+                style="@style/SpecialKeyButton"
+                android:text="'" />
+
+            <TextView
+                android:id="@+id/btn_double_quote"
+                style="@style/SpecialKeyButton"
+                android:text="&quot;" />
+
+        </LinearLayout>
+    </HorizontalScrollView>
 
 </LinearLayout>

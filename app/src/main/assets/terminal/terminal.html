@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CodeEditor Terminal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Courier New', 'Monaco', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #terminal-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 8px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-all;
+  }
+
+  #terminal-output {
+    min-height: 100%;
+  }
+
+  /* Input line */
+  #input-line {
+    display: flex;
+    align-items: center;
+    min-height: 20px;
+  }
+
+  #input-prompt {
+    color: #4ec9b0;
+    white-space: pre;
+    flex-shrink: 0;
+  }
+
+  #input-text {
+    color: #e0e0e0;
+    white-space: pre;
+    outline: none;
+    caret-color: #4ec9b0;
+    flex: 1;
+    min-width: 0;
+  }
+
+  #cursor {
+    display: inline-block;
+    width: 8px;
+    height: 15px;
+    background: #4ec9b0;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* Hidden input for keyboard capture */
+  #hidden-input {
+    position: fixed;
+    top: -100px;
+    left: -100px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  /* ANSI Colors */
+  .ansi-30 { color: #4e4e4e; }  /* Black */
+  .ansi-31 { color: #ff6b6b; }  /* Red */
+  .ansi-32 { color: #51cf66; }  /* Green */
+  .ansi-33 { color: #fcc419; }  /* Yellow */
+  .ansi-34 { color: #339af0; }  /* Blue */
+  .ansi-35 { color: #cc5de8; }  /* Magenta */
+  .ansi-36 { color: #22b8cf; }  /* Cyan */
+  .ansi-37 { color: #ddd; }     /* White */
+  .ansi-90 { color: #6e6e6e; }  /* Bright Black */
+  .ansi-91 { color: #ff8787; }  /* Bright Red */
+  .ansi-92 { color: #69db7c; }  /* Bright Green */
+  .ansi-93 { color: #ffe066; }  /* Bright Yellow */
+  .ansi-94 { color: #74c0fc; }  /* Bright Blue */
+  .ansi-95 { color: #e599f7; }  /* Bright Magenta */
+  .ansi-96 { color: #66d9e8; }  /* Bright Cyan */
+  .ansi-97 { color: #fff; }     /* Bright White */
+
+  /* Background Colors */
+  .ansi-40 { background: #4e4e4e; }
+  .ansi-41 { background: #ff6b6b; }
+  .ansi-42 { background: #51cf66; }
+  .ansi-43 { background: #fcc419; }
+  .ansi-44 { background: #339af0; }
+  .ansi-45 { background: #cc5de8; }
+  .ansi-46 { background: #22b8cf; }
+  .ansi-47 { background: #ddd; }
+
+  /* Bold, Italic, Underline */
+  .ansi-bold { font-weight: bold; }
+  .ansi-italic { font-style: italic; }
+  .ansi-underline { text-decoration: underline; }
+
+  /* Scrollbar */
+  #terminal-container::-webkit-scrollbar { width: 4px; }
+  #terminal-container::-webkit-scrollbar-track { background: transparent; }
+  #terminal-container::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+  /* Selection */
+  ::selection { background: #264f78; }
+</style>
+</head>
+<body>
+
+<div id="terminal-container">
+  <div id="terminal-output"></div>
+  <div id="input-line">
+    <span id="input-prompt"></span>
+    <span id="input-text"></span>
+    <span id="cursor"></span>
+  </div>
+</div>
+
+<input type="text" id="hidden-input" autocapitalize="none" autocorrect="off" autocomplete="off" spellcheck="false">
+
+<script>
+(function() {
+  // ===== State =====
+  var outputEl = document.getElementById('terminal-output');
+  var inputLineEl = document.getElementById('input-line');
+  var promptEl = document.getElementById('input-prompt');
+  var inputTextEl = document.getElementById('input-text');
+  var cursorEl = document.getElementById('cursor');
+  var containerEl = document.getElementById('terminal-container');
+  var hiddenInput = document.getElementById('hidden-input');
+
+  var currentInput = '';
+  var cursorPos = 0;
+  var commandHistory = [];
+  var historyIndex = -1;
+  var tempInput = '';
+  var isTerminalFocused = false;
+  var scrollLocked = true; // auto-scroll to bottom
+
+  // ===== ANSI Escape Sequence Parser =====
+  function parseAnsi(text) {
+    if (!text) return '';
+
+    var result = '';
+    var i = 0;
+    var len = text.length;
+    var openTags = [];
+
+    while (i < len) {
+      // Check for ESC[
+      if (text.charCodeAt(i) === 27 && i + 1 < len && text[i + 1] === '[') {
+        // Find the end of the CSI sequence
+        var j = i + 2;
+        while (j < len && ((text.charCodeAt(j) >= 48 && text.charCodeAt(j) <= 57) || text[j] === ';' || text[j] === '?')) {
+          j++;
+        }
+
+        if (j >= len) {
+          // Incomplete sequence - output as-is
+          result += escapeHtml(text.substring(i));
+          break;
+        }
+
+        var cmd = text[j];
+        var params = text.substring(i + 2, j);
+
+        if (cmd === 'm') {
+          // SGR (Select Graphic Rendition)
+          result += handleSgr(params, openTags);
+        } else if (cmd === 'H' || cmd === 'f') {
+          // Cursor position - ignore for now
+        } else if (cmd === 'J') {
+          // Erase display
+          if (params === '2') {
+            outputEl.innerHTML = '';
+          }
+        } else if (cmd === 'K') {
+          // Erase line - ignore
+        } else if (cmd === 'A' || cmd === 'B' || cmd === 'C' || cmd === 'D') {
+          // Cursor movement - ignore
+        } else if (cmd === 's' || cmd === 'u' || cmd === 'l' || cmd === 'h') {
+          // Cursor save/restore - ignore
+        }
+        // Skip the sequence
+        i = j + 1;
+      } else if (text.charCodeAt(i) === 13) {
+        // Carriage return - ignore
+        i++;
+      } else if (text.charCodeAt(i) === 8) {
+        // Backspace
+        result = result.slice(0, -1);
+        i++;
+      } else if (text.charCodeAt(i) === 7) {
+        // Bell - ignore
+        i++;
+      } else {
+        result += escapeHtml(text[i]);
+        i++;
+      }
+    }
+
+    // Close any remaining open tags
+    for (var k = openTags.length - 1; k >= 0; k--) {
+      result += '</span>';
+    }
+
+    return result;
+  }
+
+  function handleSgr(params, openTags) {
+    if (!params || params === '0' || params === '') {
+      // Reset all
+      var closeTags = '';
+      for (var i = openTags.length - 1; i >= 0; i--) {
+        closeTags += '</span>';
+      }
+      openTags.length = 0;
+      return closeTags;
+    }
+
+    var codes = params.split(';');
+    var classes = [];
+
+    for (var i = 0; i < codes.length; i++) {
+      var code = parseInt(codes[i]) || 0;
+
+      if (code === 0) {
+        // Reset
+        var closeTags = '';
+        for (var j = openTags.length - 1; j >= 0; j--) {
+          closeTags += '</span>';
+        }
+        openTags.length = 0;
+        return closeTags;
+      } else if (code === 1) {
+        classes.push('ansi-bold');
+      } else if (code === 3) {
+        classes.push('ansi-italic');
+      } else if (code === 4) {
+        classes.push('ansi-underline');
+      } else if (code >= 30 && code <= 37) {
+        classes.push('ansi-' + code);
+      } else if (code >= 40 && code <= 47) {
+        classes.push('ansi-' + code);
+      } else if (code >= 90 && code <= 97) {
+        classes.push('ansi-' + code);
+      } else if (code >= 100 && code <= 107) {
+        classes.push('ansi-' + code);
+      }
+      // 38;5;n and 48;5;n (256 color) - skip for simplicity
+    }
+
+    if (classes.length > 0) {
+      openTags.push(classes.length);
+      return '<span class="' + classes.join(' ') + '">';
+    }
+
+    return '';
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // ===== Output =====
+  function appendOutput(text) {
+    var parsed = parseAnsi(text);
+    outputEl.innerHTML += parsed;
+    scrollToBottom();
+  }
+
+  function clearScreen() {
+    outputEl.innerHTML = '';
+  }
+
+  function scrollToBottom() {
+    if (scrollLocked) {
+      containerEl.scrollTop = containerEl.scrollHeight;
+    }
+  }
+
+  // ===== Input Handling =====
+  function updateInputDisplay() {
+    var beforeCursor = escapeHtml(currentInput.substring(0, cursorPos));
+    inputTextEl.innerHTML = beforeCursor;
+  }
+
+  function focusTerminal() {
+    hiddenInput.focus();
+    isTerminalFocused = true;
+    cursorEl.style.animationPlayState = 'running';
+  }
+
+  function blurTerminal() {
+    isTerminalFocused = false;
+    cursorEl.style.animationPlayState = 'paused';
+  }
+
+  // Handle touch on terminal area
+  containerEl.addEventListener('click', function(e) {
+    focusTerminal();
+  });
+
+  // Handle keyboard input
+  hiddenInput.addEventListener('input', function(e) {
+    var val = hiddenInput.value;
+    if (val) {
+      // Insert at cursor position
+      currentInput = currentInput.substring(0, cursorPos) + val + currentInput.substring(cursorPos);
+      cursorPos += val.length;
+      updateInputDisplay();
+      hiddenInput.value = '';
+    }
+  });
+
+  hiddenInput.addEventListener('keydown', function(e) {
+    var key = e.key;
+
+    if (key === 'Enter') {
+      e.preventDefault();
+      submitInput();
+    } else if (key === 'Backspace') {
+      e.preventDefault();
+      if (cursorPos > 0) {
+        currentInput = currentInput.substring(0, cursorPos - 1) + currentInput.substring(cursorPos);
+        cursorPos--;
+        updateInputDisplay();
+      }
+    } else if (key === 'Delete') {
+      e.preventDefault();
+      if (cursorPos < currentInput.length) {
+        currentInput = currentInput.substring(0, cursorPos) + currentInput.substring(cursorPos + 1);
+        updateInputDisplay();
+      }
+    } else if (key === 'ArrowLeft') {
+      e.preventDefault();
+      if (cursorPos > 0) {
+        cursorPos--;
+        updateInputDisplay();
+      }
+    } else if (key === 'ArrowRight') {
+      e.preventDefault();
+      if (cursorPos < currentInput.length) {
+        cursorPos++;
+        updateInputDisplay();
+      }
+    } else if (key === 'ArrowUp') {
+      e.preventDefault();
+      navigateHistory(-1);
+    } else if (key === 'ArrowDown') {
+      e.preventDefault();
+      navigateHistory(1);
+    } else if (key === 'Home') {
+      e.preventDefault();
+      cursorPos = 0;
+      updateInputDisplay();
+    } else if (key === 'End') {
+      e.preventDefault();
+      cursorPos = currentInput.length;
+      updateInputDisplay();
+    } else if (key === 'Tab') {
+      e.preventDefault();
+      handleTab();
+    } else if (e.ctrlKey) {
+      handleCtrlKey(e);
+    }
+  });
+
+  hiddenInput.addEventListener('focus', function() {
+    isTerminalFocused = true;
+    cursorEl.style.animationPlayState = 'running';
+  });
+
+  hiddenInput.addEventListener('blur', function() {
+    isTerminalFocused = false;
+    cursorEl.style.animationPlayState = 'paused';
+  });
+
+  function submitInput() {
+    var cmd = currentInput;
+    if (cmd.trim()) {
+      commandHistory.push(cmd);
+    }
+    historyIndex = -1;
+    tempInput = '';
+
+    // Display the command
+    appendOutput(promptEl.textContent + cmd + '\n');
+
+    // Send to Java
+    if (typeof AndroidTerminal !== 'undefined') {
+      AndroidTerminal.onCommand(cmd + '\n');
+    }
+
+    // Reset input
+    currentInput = '';
+    cursorPos = 0;
+    updateInputDisplay();
+  }
+
+  function navigateHistory(direction) {
+    if (commandHistory.length === 0) return;
+
+    if (historyIndex === -1) {
+      tempInput = currentInput;
+    }
+
+    historyIndex += direction;
+
+    if (historyIndex < -1) {
+      historyIndex = -1;
+    } else if (historyIndex >= commandHistory.length) {
+      historyIndex = commandHistory.length - 1;
+    }
+
+    if (historyIndex === -1) {
+      currentInput = tempInput;
+    } else {
+      currentInput = commandHistory[commandHistory.length - 1 - historyIndex];
+    }
+
+    cursorPos = currentInput.length;
+    updateInputDisplay();
+  }
+
+  function handleTab() {
+    // Basic tab completion - request from Java side
+    if (typeof AndroidTerminal !== 'undefined') {
+      AndroidTerminal.onTab(currentInput);
+    }
+  }
+
+  function handleCtrlKey(e) {
+    // Ctrl+C
+    if (e.key === 'c' || e.key === 'C') {
+      e.preventDefault();
+      appendOutput('^C\n');
+      currentInput = '';
+      cursorPos = 0;
+      updateInputDisplay();
+      if (typeof AndroidTerminal !== 'undefined') {
+        AndroidTerminal.onCtrlC();
+      }
+    }
+    // Ctrl+D
+    else if (e.key === 'd' || e.key === 'D') {
+      e.preventDefault();
+      if (currentInput.length === 0) {
+        if (typeof AndroidTerminal !== 'undefined') {
+          AndroidTerminal.onCtrlD();
+        }
+      } else {
+        // Delete char at cursor
+        if (cursorPos < currentInput.length) {
+          currentInput = currentInput.substring(0, cursorPos) + currentInput.substring(cursorPos + 1);
+          updateInputDisplay();
+        }
+      }
+    }
+    // Ctrl+L - clear screen
+    else if (e.key === 'l' || e.key === 'L') {
+      e.preventDefault();
+      clearScreen();
+    }
+    // Ctrl+U - clear line
+    else if (e.key === 'u' || e.key === 'U') {
+      e.preventDefault();
+      currentInput = '';
+      cursorPos = 0;
+      updateInputDisplay();
+    }
+    // Ctrl+A - beginning of line
+    else if (e.key === 'a' || e.key === 'A') {
+      e.preventDefault();
+      cursorPos = 0;
+      updateInputDisplay();
+    }
+    // Ctrl+E - end of line
+    else if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault();
+      cursorPos = currentInput.length;
+      updateInputDisplay();
+    }
+    // Ctrl+Z
+    else if (e.key === 'z' || e.key === 'Z') {
+      e.preventDefault();
+      if (typeof AndroidTerminal !== 'undefined') {
+        AndroidTerminal.onCtrlZ();
+      }
+    }
+  }
+
+  // ===== Public API (called from Java) =====
+
+  // Append output text to the terminal
+  window.appendTerminalOutput = function(text) {
+    appendOutput(text);
+  };
+
+  // Set the prompt text
+  window.setPrompt = function(text) {
+    promptEl.textContent = text;
+  };
+
+  // Clear the terminal
+  window.clearTerminal = function() {
+    clearScreen();
+  };
+
+  // Focus the terminal
+  window.focusTerminal = function() {
+    focusTerminal();
+  };
+
+  // Insert text at cursor (from special keys bar)
+  window.insertText = function(text) {
+    currentInput = currentInput.substring(0, cursorPos) + text + currentInput.substring(cursorPos);
+    cursorPos += text.length;
+    updateInputDisplay();
+    focusTerminal();
+  };
+
+  // Send raw key from special keys
+  window.sendKey = function(key) {
+    if (key === 'ENTER') {
+      submitInput();
+    } else if (key === 'TAB') {
+      currentInput = currentInput.substring(0, cursorPos) + '\t' + currentInput.substring(cursorPos);
+      cursorPos++;
+      updateInputDisplay();
+    } else if (key === 'ESC') {
+      if (typeof AndroidTerminal !== 'undefined') {
+        AndroidTerminal.onEscape();
+      }
+    } else if (key === 'UP') {
+      navigateHistory(-1);
+    } else if (key === 'DOWN') {
+      navigateHistory(1);
+    } else if (key === 'LEFT') {
+      if (cursorPos > 0) { cursorPos--; updateInputDisplay(); }
+    } else if (key === 'RIGHT') {
+      if (cursorPos < currentInput.length) { cursorPos++; updateInputDisplay(); }
+    } else if (key === 'HOME') {
+      cursorPos = 0; updateInputDisplay();
+    } else if (key === 'END') {
+      cursorPos = currentInput.length; updateInputDisplay();
+    } else if (key === 'DEL') {
+      if (cursorPos < currentInput.length) {
+        currentInput = currentInput.substring(0, cursorPos) + currentInput.substring(cursorPos + 1);
+        updateInputDisplay();
+      }
+    } else {
+      insertText(key);
+    }
+  };
+
+  // Get current input text
+  window.getCurrentInput = function() {
+    return currentInput;
+  };
+
+  // ===== Initialization =====
+  appendOutput('\x1b[32m╔══════════════════════════════════════════╗\x1b[0m\n');
+  appendOutput('\x1b[32m║     CodeEditor Terminal v1.2.0          ║\x1b[0m\n');
+  appendOutput('\x1b[32m║     Interactive Shell Session            ║\x1b[0m\n');
+  appendOutput('\x1b[32m╚══════════════════════════════════════════╝\x1b[0m\n');
+  appendOutput('\n');
+  appendOutput('  Shell: /system/bin/sh\n');
+  appendOutput('  Type \x1b[33mhelp\x1b[0m for available commands\n');
+  appendOutput('  Use special keys bar for Tab, Ctrl, arrows\n');
+  appendOutput('\n');
+
+  // Auto-focus
+  setTimeout(function() { focusTerminal(); }, 300);
+
+  // Re-focus on tap
+  document.addEventListener('touchstart', function() {
+    setTimeout(function() { focusTerminal(); }, 100);
+  }, { passive: true });
+
+  // Handle scroll lock
+  containerEl.addEventListener('scroll', function() {
+    var atBottom = containerEl.scrollHeight - containerEl.scrollTop - containerEl.clientHeight < 40;
+    scrollLocked = atBottom;
+  });
+
+})();
+</script>
+</body>
+</html>

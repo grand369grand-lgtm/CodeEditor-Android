@@ -24,6 +24,7 @@ import com.codeeditor.app.editor.EditorActivity;
 import com.codeeditor.app.filemanager.FileManagerActivity;
 import com.codeeditor.app.filemanager.FileListAdapter;
 import com.codeeditor.app.filemanager.FileItem;
+import com.codeeditor.app.runner.TerminalActivity;
 import com.codeeditor.app.utils.PreferenceManager;
 
 import java.io.File;
@@ -43,6 +44,7 @@ public class MainActivity extends AppCompatActivity {
     private CardView cardOpenFile;
     private CardView cardFileManager;
     private CardView cardSettings;
+    private CardView cardTerminal;
     private PreferenceManager prefManager;
 
     @Override
@@ -67,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
         cardOpenFile = findViewById(R.id.card_open_file);
         cardFileManager = findViewById(R.id.card_file_manager);
         cardSettings = findViewById(R.id.card_settings);
+        cardTerminal = findViewById(R.id.card_terminal);
 
         rvRecentFiles.setLayoutManager(new GridLayoutManager(this, 2));
     }
@@ -96,6 +99,12 @@ public class MainActivity extends AppCompatActivity {
         // Settings
         cardSettings.setOnClickListener(v -> {
             Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
+            startActivity(intent);
+        });
+
+        // Terminal - Open interactive terminal
+        cardTerminal.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, TerminalActivity.class);
             startActivity(intent);
         });
     }
@@ -203,6 +212,9 @@ public class MainActivity extends AppCompatActivity {
             return true;
         } else if (id == R.id.action_file_manager) {
             startActivity(new Intent(this, FileManagerActivity.class));
+            return true;
+        } else if (id == R.id.action_terminal) {
+            startActivity(new Intent(this, TerminalActivity.class));
             return true;
         }
         return super.onOptionsItemSelected(item);

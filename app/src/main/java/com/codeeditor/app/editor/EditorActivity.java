@@ -331,6 +331,7 @@ public class EditorActivity extends AppCompatActivity {
 
     /**
      * Run the current code using C++ native runner.
+     * Falls back to interactive terminal for code execution.
      */
     private void runCode() {
         webView.evaluateJavascript("getEditorContent();", value -> {
@@ -349,23 +350,38 @@ public class EditorActivity extends AppCompatActivity {
 
                 fileContent = content;
 
-                // Execute code using native C++ runner
-                String result;
+                // Try native runner first, then fall back to terminal
+                String result = null;
                 if (nativeRunner != null) {
-                    result = nativeRunner.executeCode(currentLanguage, fileContent, filePath);
-                } else {
-                    result = "Native runner not available.\n" +
-                            "The native library could not be loaded.\n" +
-                            "Code execution requires the C++ native library.";
+                    try {
+                        result = nativeRunner.executeCode(currentLanguage, fileContent, filePath);
+                    } catch (Exception e) {
+                        result = null;
+                    }
                 }
 
-                // Open terminal to show results
-                Intent intent = new Intent(EditorActivity.this, TerminalActivity.class);
-                intent.putExtra(TerminalActivity.EXTRA_OUTPUT, result);
-                intent.putExtra(TerminalActivity.EXTRA_LANGUAGE, currentLanguage);
-                intent.putExtra(TerminalActivity.EXTRA_FILE_NAME,
-                        filePath != null ? new File(filePath).getName() : "untitled");
-                startActivity(intent);
+                if (result != null && !result.isEmpty()) {
+                    // Show output in terminal (backward compatible mode)
+                    Intent intent = new Intent(EditorActivity.this, TerminalActivity.class);
+                    intent.putExtra(TerminalActivity.EXTRA_OUTPUT, result);
+                    intent.putExtra(TerminalActivity.EXTRA_LANGUAGE, currentLanguage);
+                    intent.putExtra(TerminalActivity.EXTRA_FILE_NAME,
+                            filePath != null ? new File(filePath).getName() : "untitled");
+                    startActivity(intent);
+                } else {
+                    // Run in interactive terminal
+                    Intent intent = new Intent(EditorActivity.this, TerminalActivity.class);
+                    intent.putExtra(TerminalActivity.EXTRA_LANGUAGE, currentLanguage);
+                    intent.putExtra(TerminalActivity.EXTRA_FILE_NAME,
+                            filePath != null ? new File(filePath).getName() : "untitled");
+                    intent.putExtra(TerminalActivity.EXTRA_CODE, fileContent);
+                    intent.putExtra(TerminalActivity.EXTRA_RUN_CODE, true);
+                    if (filePath != null) {
+                        intent.putExtra(TerminalActivity.EXTRA_WORK_DIR,
+                                new File(filePath).getParent());
+                    }
+                    startActivity(intent);
+                }
             }
         });
     }
