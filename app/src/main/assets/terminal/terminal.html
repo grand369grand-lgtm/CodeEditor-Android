@@ -158,6 +158,8 @@
   var tempInput = '';
   var isTerminalFocused = false;
   var scrollLocked = true; // auto-scroll to bottom
+  var sessionMode = 'android'; // 'android' or 'linux'
+  var isProotSession = false;
 
   // ===== ANSI Escape Sequence Parser =====
   function parseAnsi(text) {
@@ -269,7 +271,6 @@
       } else if (code >= 100 && code <= 107) {
         classes.push('ansi-' + code);
       }
-      // 38;5;n and 48;5;n (256 color) - skip for simplicity
     }
 
     if (classes.length > 0) {
@@ -584,14 +585,19 @@
   };
 
   // ===== Initialization =====
-  appendOutput('\x1b[32m╔══════════════════════════════════════════╗\x1b[0m\n');
-  appendOutput('\x1b[32m║     CodeEditor Terminal v1.2.0          ║\x1b[0m\n');
-  appendOutput('\x1b[32m║     Interactive Shell Session            ║\x1b[0m\n');
-  appendOutput('\x1b[32m╚══════════════════════════════════════════╝\x1b[0m\n');
+  appendOutput('\x1b[32m╔══════════════════════════════════════════════════╗\x1b[0m\n');
+  appendOutput('\x1b[32m║     CodeEditor Terminal v1.3.0                   ║\x1b[0m\n');
+  appendOutput('\x1b[32m║     Android Shell + Linux (proot) Support        ║\x1b[0m\n');
+  appendOutput('\x1b[32m╚══════════════════════════════════════════════════╝\x1b[0m\n');
   appendOutput('\n');
-  appendOutput('  Shell: /system/bin/sh\n');
-  appendOutput('  Type \x1b[33mhelp\x1b[0m for available commands\n');
-  appendOutput('  Use special keys bar for Tab, Ctrl, arrows\n');
+  appendOutput('  Shell: /system/bin/sh (Android)\n');
+  appendOutput('  Linux: Ubuntu/Debian/Alpine via proot\n');
+  appendOutput('\n');
+  appendOutput('  \x1b[33mQuick Start:\x1b[0m\n');
+  appendOutput('  1. Tap \x1b[36mInstall Linux\x1b[0m button above to set up Ubuntu\n');
+  appendOutput('  2. Or use \x1b[36mMenu → Install Linux\x1b[0m\n');
+  appendOutput('  3. Use special keys bar for Tab, Ctrl, arrows\n');
+  appendOutput('  4. Type \x1b[33mhelp\x1b[0m for available commands\n');
   appendOutput('\n');
 
   // Auto-focus

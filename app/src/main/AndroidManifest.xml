@@ -12,14 +12,18 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-    <!-- Network permission for Monaco Editor CDN -->
+    <!-- Network permission for Monaco Editor CDN and Linux distro downloads -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Vibrate for feedback -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Keep screen on while coding -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Foreground service for long-running terminal sessions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
         android:name=".CodeEditorApp"
@@ -71,10 +75,11 @@
             android:name=".SettingsActivity"
             android:label="@string/settings_title" />
 
-        <!-- Terminal Activity - Show code output -->
+        <!-- Terminal Activity - Interactive terminal with Linux support -->
         <activity
             android:name=".runner.TerminalActivity"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden" />
 
     </application>
 </manifest>

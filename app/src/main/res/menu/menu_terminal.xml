@@ -9,6 +9,26 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/action_start_linux"
+        android:title="@string/start_linux"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_android_shell"
+        android:title="@string/android_shell"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_install_distro"
+        android:title="@string/install_linux"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/action_uninstall_distro"
+        android:title="@string/uninstall_linux"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_run_file"
         android:title="@string/run_file"
         app:showAsAction="never" />

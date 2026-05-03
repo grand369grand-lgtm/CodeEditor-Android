@@ -31,10 +31,130 @@
             android:id="@+id/tv_terminal_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="CodeEditor Terminal"
+            android:text="CodeEditor Terminal v1.3.0"
             android:textSize="12sp"
             android:textColor="#6c7293"
             android:fontFamily="monospace" />
+    </LinearLayout>
+
+    <!-- Linux distro control bar -->
+    <LinearLayout
+        android:id="@+id/linux_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="#0f3460"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp">
+
+        <!-- Install buttons (shown when no distro installed) -->
+        <LinearLayout
+            android:id="@+id/install_buttons"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="visible">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Install Linux:"
+                android:textSize="11sp"
+                android:textColor="#8892b0"
+                android:fontFamily="monospace"
+                android:paddingEnd="8dp" />
+
+            <TextView
+                android:id="@+id/btn_install_ubuntu"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:gravity="center"
+                android:text="Ubuntu"
+                android:textSize="10sp"
+                android:textColor="#E95420"
+                android:fontFamily="monospace"
+                android:background="@drawable/bg_special_key"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/btn_install_debian"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:gravity="center"
+                android:text="Debian"
+                android:textSize="10sp"
+                android:textColor="#A80030"
+                android:fontFamily="monospace"
+                android:background="@drawable/bg_special_key"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:layout_marginStart="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/btn_install_alpine"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:gravity="center"
+                android:text="Alpine"
+                android:textSize="10sp"
+                android:textColor="#0D597F"
+                android:fontFamily="monospace"
+                android:background="@drawable/bg_special_key"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:layout_marginStart="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
+
+        <!-- Run buttons (shown when distro installed) -->
+        <LinearLayout
+            android:id="@+id/run_buttons"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/btn_start_linux"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:gravity="center"
+                android:text="Start Linux"
+                android:textSize="10sp"
+                android:textColor="#51cf66"
+                android:fontFamily="monospace"
+                android:background="@drawable/bg_special_key"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/btn_switch_android"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:gravity="center"
+                android:text="Android Shell"
+                android:textSize="10sp"
+                android:textColor="#22b8cf"
+                android:fontFamily="monospace"
+                android:background="@drawable/bg_special_key"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:layout_marginStart="4dp"
+                android:clickable="true"
+                android:focusable="true" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- Separator -->
